@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ゾンビシューティング</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #000; font-family: system-ui, sans-serif; }
+  canvas { display: block; }
+
+  #crosshair {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 20px; height: 20px; pointer-events: none; opacity: 0;
+    transition: opacity .2s;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ''; position: absolute; background: #fff; box-shadow: 0 0 2px #000;
+  }
+  #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; margin-left: -1px; }
+  #crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; margin-top: -1px; }
+  body.playing #crosshair { opacity: .8; }
+
+  #overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 20px;
+    background: rgba(10, 12, 16, .85); color: #eee; cursor: pointer;
+  }
+  body.playing #overlay { display: none; }
+  #overlay h1 { font-size: 32px; letter-spacing: .05em; }
+  #overlay .keys { font-size: 14px; line-height: 2; color: #9aa3ad; text-align: center; }
+  #overlay .start { font-size: 16px; padding: 12px 28px; border: 1px solid #4c5560; border-radius: 4px; }
+
+  #hud {
+    position: fixed; left: 16px; bottom: 16px; color: #cfd6dd;
+    font-size: 13px; font-variant-numeric: tabular-nums; opacity: 0;
+  }
+  body.playing #hud { opacity: .7; }
+</style>
+</head>
+<body>
+  <div id="crosshair"></div>
+  <div id="hud">FPS: <span id="fps">--</span></div>
+  <div id="overlay">
+    <h1>ゾンビシューティング</h1>
+    <div class="keys">
+      W A S D : 移動 ／ マウス : 視点<br>
+      Space : ジャンプ ／ Shift : ダッシュ<br>
+      Esc : ポーズ
+    </div>
+    <div class="start">クリックしてスタート</div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.180.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
