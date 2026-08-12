@@ -1,5 +1,6 @@
 import { ITEMS } from './data/items.js';
 import { MATERIALS } from './data/builds.js';
+import { PLAYER } from './data/jobs.js';
 import { IS_TOUCH } from './device.js';
 
 const CYCLE_HINT = IS_TOUCH ? '「切替」で変更' : 'R で切替';
@@ -25,6 +26,7 @@ export class Hud {
     this.ultFill = document.getElementById('ult-fill');
     this.ultText = document.getElementById('ult-text');
     this.ultBtn = document.getElementById('btn-ult');
+    this.hurt = document.getElementById('hurt');
     this.toastTimer = 0;
     this.slotIds = [];
   }
@@ -60,6 +62,10 @@ export class Hud {
     this.hpFill.style.width = `${(player.hp / player.maxHp) * 100}%`;
     this.hpText.textContent = player.downed ? 'ダウン' : Math.round(player.hp);
     this.invuln.classList.toggle('hidden', !player.invulnerable);
+
+    // 殴られた直後ほど濃く赤くして、そこから薄れていく
+    const hurt = 1 - (player.time - player.hurtAt) / PLAYER.hurtTime;
+    this.hurt.style.opacity = hurt > 0 ? Math.min(1, hurt).toFixed(3) : '0';
 
     const item = weapons.current;
     const st = weapons.currentState;

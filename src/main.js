@@ -339,6 +339,12 @@ function swing(item) {
   if (hits) hud.setToast(`ヒット -${item.damage}`, 0.8);
 }
 
+// 被弾モーションは、撃つ・振るモーションより優先して他の人に見せる
+function hurtAnim(player) {
+  const t = (player.time - player.hurtAt) / PLAYER.hurtTime;
+  return t >= 0 && t < 1 ? { name: 'hurt', t } : null;
+}
+
 function applyDamage(amount) {
   const { player } = game;
   const wentDown = player.damage(amount);
@@ -461,7 +467,7 @@ function frame() {
     else builder.hideGhost();
     viewModel.update(dt, anim, Math.min(player.speed / 4.5, 1));
 
-    teammates[0].update(dt, { itemId: weapons.current?.id ?? null, anim });
+    teammates[0].update(dt, { itemId: weapons.current?.id ?? null, anim: hurtAnim(player) ?? anim });
     teammates[1].update(dt, { itemId: null, anim: { name: 'idle', t: 0 } });
 
     if (player.downed) {

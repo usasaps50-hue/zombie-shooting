@@ -36,6 +36,7 @@ export class Player {
     this.invulnUntil = 0;
     this.speed = 0;
     this.time = 0;
+    this.hurtAt = -99;
   }
 
   get invulnerable() {
@@ -103,6 +104,7 @@ export class Player {
     if (this.downed || this.invulnerable) return false;
     this.hp = Math.max(0, this.hp - amount);
     this.invulnUntil = this.time + PLAYER.hitInvulnTime;
+    this.hurtAt = this.time;
     if (this.hp === 0) {
       this.downed = true;
       this.downedAt = this.time;

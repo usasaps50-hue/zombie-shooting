@@ -40,6 +40,8 @@ export const PLAYER = {
   reviveInvulnTime: 3.0,
   reviveHp: 50,
   hitInvulnTime: 0.6,
+  // 被弾したときの、画面の赤みとのけぞりモーションの長さ
+  hurtTime: 0.5,
 };
 
 export const ENEMIES = {

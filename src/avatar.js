@@ -111,6 +111,11 @@ export class Avatar {
     this.armR.add(this.hand);
 
     body.add(torso, head, this.armR, this.armL, this.legR, this.legL);
+
+    // 被弾したときに赤く光らせる。アイテムや帽子は後から足すので含まれない
+    this.skinMaterials = [];
+    body.traverse((o) => { if (o.isMesh) this.skinMaterials.push(o.material); });
+    this.flash = 0;
   }
 
   setHat(jobId) {
@@ -144,7 +149,16 @@ export class Avatar {
     this.downed = downed;
   }
 
+  // 被弾中だけ体を赤くする。他のプレイヤーからも「今もらった」と分かるように
+  #setFlash(amount) {
+    if (Math.abs(amount - this.flash) < 0.01) return;
+    this.flash = amount;
+    for (const m of this.skinMaterials) m.emissive.setRGB(amount, 0, 0);
+  }
+
   update(dt, { anim = { name: 'idle', t: 0 }, speed = 0, pitch = 0 } = {}) {
+    this.#setFlash(anim.name === 'hurt' ? (1 - anim.t) * 0.45 : 0);
+
     if (this.downed) {
       this.body.rotation.x = THREE.MathUtils.lerp(this.body.rotation.x, -Math.PI / 2, dt * 8);
       // 倒すと各パーツのローカルYが奥行きに変わるので、厚みの半分だけ持ち上げて床に寝かせる
@@ -157,6 +171,7 @@ export class Avatar {
     }
     this.body.rotation.x = THREE.MathUtils.lerp(this.body.rotation.x, 0, dt * 8);
     this.body.position.y = THREE.MathUtils.lerp(this.body.position.y, 0, dt * 8);
+    this.body.position.z = THREE.MathUtils.lerp(this.body.position.z, 0, dt * 10);
 
     this.walkPhase += dt * (2 + speed * 2.2);
     const step = Math.sin(this.walkPhase * 2) * Math.min(speed / 4.5, 1) * 0.7;
@@ -193,6 +208,15 @@ export class Avatar {
       this.body.rotation.y = THREE.MathUtils.lerp(0.95, -0.75, swing);
     } else if (name === 'swap') {
       armR += (1 - smooth(t)) * 1.0;
+    } else if (name === 'hurt') {
+      // 一瞬のけぞって、両腕で頭をかばう
+      const recoil = t < 0.25 ? smooth(t / 0.25) : 1 - smooth((t - 0.25) / 0.75);
+      armR = -2.5;
+      armL = -2.5;
+      armRz = -0.3;
+      armLz = 0.3;
+      this.body.rotation.x = -recoil * 0.4;
+      this.body.position.z = -recoil * 0.14;
     }
 
     if (name !== 'swing') this.body.rotation.y = THREE.MathUtils.lerp(this.body.rotation.y, 0, dt * 10);

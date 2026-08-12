@@ -96,6 +96,13 @@ button.ghost { background: transparent; border: 1px solid #2a323d; color: #b6c0c
 #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; margin-left: -1px; }
 #crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; margin-top: -1px; }
 
+/* 被弾したときの赤み。ふちだけ濃くして、真ん中は見えるようにする */
+#hurt {
+  position: absolute; inset: 0; opacity: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center,
+    rgba(150, 10, 10, 0) 42%, rgba(160, 14, 14, .5) 76%, rgba(90, 0, 0, .95) 100%);
+}
+
 #vitals { position: absolute; left: 18px; bottom: 18px; width: 190px; }
 .hp-bar { height: 10px; background: rgba(0, 0, 0, .5); border-radius: 5px; overflow: hidden; }
 #hp-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #d05656, #e08a4a); transition: width .15s; }
