@@ -59,6 +59,9 @@ const enemies = [
   new Enemy(scene, new THREE.Vector3(-12, 0, -22)),
   new Enemy(scene, new THREE.Vector3(1, 0, -26)),
   new Enemy(scene, new THREE.Vector3(14, 0, -21)),
+  // 青ゾンビは索敵範囲が広いので、遠くに置いても寄ってくる
+  new Enemy(scene, new THREE.Vector3(-22, 0, -34), 'blue'),
+  new Enemy(scene, new THREE.Vector3(20, 0, -36), 'blue'),
 ];
 
 const builder = new Builder(scene, colliders, {});

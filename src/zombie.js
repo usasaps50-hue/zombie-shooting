@@ -36,16 +36,16 @@ function grungeTexture(base, dark, spot, density = 260) {
   return canvasTexture(canvas);
 }
 
-function faceTexture() {
+function faceTexture(skin) {
   const size = 128;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#7c8873';
+  ctx.fillStyle = skin.face;
   ctx.fillRect(0, 0, size, size);
   for (let i = 0; i < 120; i++) {
-    ctx.fillStyle = Math.random() > 0.5 ? '#4c5642' : '#9aa78a';
+    ctx.fillStyle = Math.random() > 0.5 ? skin.dark : skin.light;
     ctx.globalAlpha = 0.08 + Math.random() * 0.15;
     ctx.beginPath();
     ctx.arc(Math.random() * size, Math.random() * size, 1 + Math.random() * 3, 0, Math.PI * 2);
@@ -89,16 +89,33 @@ function graveTexture() {
   return canvasTexture(canvas);
 }
 
+// 服と墓は全種類で共通
 const TEX = {
   sleeve: grungeTexture('#5b5245', '#3a352c', '#8a9578'),
-  cuff: grungeTexture('#9aa78a', '#6b7860', '#c4cbb0', 180),
   pants: grungeTexture('#2f394a', '#1c222c', '#4a5568'),
-  pantsCuff: grungeTexture('#6b7860', '#4c5642', '#9aa78a', 180),
-  face: faceTexture(),
   stone: grungeTexture('#8a8a86', '#5c5c58', '#a8a8a2', 220),
   dirt: grungeTexture('#3a2e22', '#241b13', '#4d3d2c', 220),
   graveFront: graveTexture(),
 };
+
+// 肌の色。face は顔、hand は袖から出た手、foot は裾から出た足
+const SKINS = {
+  green: { face: '#7c8873', dark: '#4c5642', light: '#9aa78a', hand: '#9aa78a', foot: '#6b7860' },
+  blue: { face: '#5d8cb6', dark: '#2f5d7d', light: '#a6cbe4', hand: '#7fabce', foot: '#48708f' },
+};
+
+// 同じ肌のテクスチャは1回だけ作って使い回す
+const skinCache = {};
+function skinTextures(id) {
+  const skin = SKINS[id] ?? SKINS.green;
+  skinCache[id] ??= {
+    face: faceTexture(skin),
+    cuff: grungeTexture(skin.hand, skin.dark, skin.light, 180),
+    pantsCuff: grungeTexture(skin.foot, skin.dark, skin.light, 180),
+    dark: skin.dark,
+  };
+  return skinCache[id];
+}
 
 const ATTACK_TIME = 0.55;
 const ATTACK_HIT_TIME = 0.42;
@@ -114,15 +131,16 @@ function box(w, h, d, material) {
 }
 
 export class Zombie {
-  constructor() {
+  constructor(skinId = 'green') {
+    const skin = skinTextures(skinId);
     const skinned = (map) => new THREE.MeshStandardMaterial({ map, roughness: 0.95, transparent: true });
     this.mats = {
       sleeve: skinned(TEX.sleeve),
-      cuff: skinned(TEX.cuff),
+      cuff: skinned(skin.cuff),
       pants: skinned(TEX.pants),
-      pantsCuff: skinned(TEX.pantsCuff),
-      face: skinned(TEX.face),
-      dark: new THREE.MeshStandardMaterial({ color: 0x4c5642, roughness: 1, transparent: true }),
+      pantsCuff: skinned(skin.pantsCuff),
+      face: skinned(skin.face),
+      dark: new THREE.MeshStandardMaterial({ color: skin.dark, roughness: 1, transparent: true }),
     };
     this.bodyMats = Object.values(this.mats);
 

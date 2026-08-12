@@ -83,8 +83,8 @@ const ATTACK_COOLDOWN = 1.2;
 const box = new THREE.Box3();
 
 export class Enemy {
-  constructor(scene, position) {
-    this.def = ENEMIES.normal;
+  constructor(scene, position, typeId = 'normal') {
+    this.def = ENEMIES[typeId];
     this.maxHp = this.def.hp;
     this.hp = this.maxHp;
     this.respawnAt = 0;
@@ -101,7 +101,7 @@ export class Enemy {
 
     this.root = new THREE.Group();
     this.root.position.copy(position);
-    this.zombie = new Zombie();
+    this.zombie = new Zombie(this.def.skin);
     this.root.add(this.zombie.root);
 
     // アニメーションで動く見た目とは別に、当たり判定は固定のカプセルで取る

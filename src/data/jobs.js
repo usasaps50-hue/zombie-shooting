@@ -44,15 +44,27 @@ export const PLAYER = {
   hurtTime: 0.5,
 };
 
+const NORMAL_ZOMBIE = {
+  id: 'normal',
+  name: '通常ゾンビ',
+  skin: 'green',
+  hp: 75,
+  sight: 14,
+  walkSpeed: 1.1,
+  chaseSpeed: 2.7,
+  damage: 10,
+  reach: 2.0,
+  structureDamage: 20,
+};
+
 export const ENEMIES = {
-  normal: {
-    name: '通常ゾンビ',
-    hp: 75,
-    sight: 14,
-    walkSpeed: 1.1,
-    chaseSpeed: 2.7,
-    damage: 10,
-    reach: 2.0,
-    structureDamage: 20,
+  normal: NORMAL_ZOMBIE,
+  // 肌が青いゾンビ。通常との違いは索敵範囲が1.8倍という点だけ
+  blue: {
+    ...NORMAL_ZOMBIE,
+    id: 'blue',
+    name: '青ゾンビ',
+    skin: 'blue',
+    sight: NORMAL_ZOMBIE.sight * 1.8,
   },
 };
