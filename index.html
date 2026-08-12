@@ -2,54 +2,111 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>ゾンビシューティング</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { overflow: hidden; background: #000; font-family: system-ui, sans-serif; }
-  canvas { display: block; }
-
-  #crosshair {
-    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    width: 20px; height: 20px; pointer-events: none; opacity: 0;
-    transition: opacity .2s;
-  }
-  #crosshair::before, #crosshair::after {
-    content: ''; position: absolute; background: #fff; box-shadow: 0 0 2px #000;
-  }
-  #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; margin-left: -1px; }
-  #crosshair::after { top: 50%; left: 0; height: 2px; width: 100%; margin-top: -1px; }
-  body.playing #crosshair { opacity: .8; }
-
-  #overlay {
-    position: fixed; inset: 0; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 20px;
-    background: rgba(10, 12, 16, .85); color: #eee; cursor: pointer;
-  }
-  body.playing #overlay { display: none; }
-  #overlay h1 { font-size: 32px; letter-spacing: .05em; }
-  #overlay .keys { font-size: 14px; line-height: 2; color: #9aa3ad; text-align: center; }
-  #overlay .start { font-size: 16px; padding: 12px 28px; border: 1px solid #4c5560; border-radius: 4px; }
-
-  #hud {
-    position: fixed; left: 16px; bottom: 16px; color: #cfd6dd;
-    font-size: 13px; font-variant-numeric: tabular-nums; opacity: 0;
-  }
-  body.playing #hud { opacity: .7; }
-</style>
+<link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <div id="crosshair"></div>
-  <div id="hud">FPS: <span id="fps">--</span></div>
-  <div id="overlay">
-    <h1>ゾンビシューティング</h1>
-    <div class="keys">
-      W A S D : 移動 ／ マウス : 視点<br>
-      Space : ジャンプ ／ Shift : ダッシュ<br>
-      Esc : ポーズ
+  <canvas id="game"></canvas>
+
+  <!-- 待機ロビー -->
+  <section id="lobby" class="screen">
+    <div class="panel">
+      <h1>ゾンビシューティング</h1>
+
+      <div class="row">
+        <label for="passphrase">合言葉</label>
+        <div class="pass-row">
+          <input id="passphrase" type="text" maxlength="16" placeholder="例: あいことば" autocomplete="off">
+          <button id="btn-random" class="ghost" type="button">ランダム</button>
+        </div>
+        <p class="hint">同じ合言葉を入れた人と同じ部屋に集まります（オンライン接続は次のステップで実装）。</p>
+      </div>
+
+      <div class="row">
+        <label>職業</label>
+        <div id="jobs" class="cards"></div>
+      </div>
+
+      <div class="row">
+        <label>アイテム <span id="slot-count" class="count">0 / 3</span></label>
+        <div id="items" class="cards"></div>
+        <p id="job-extra" class="hint"></p>
+      </div>
+
+      <div class="row">
+        <label>参加メンバー</label>
+        <ul id="members" class="members"></ul>
+      </div>
+
+      <button id="btn-start" class="primary" type="button">ホストとして開始</button>
     </div>
-    <div class="start">クリックしてスタート</div>
+  </section>
+
+  <!-- ゲーム中HUD -->
+  <div id="hud" class="hidden">
+    <div id="crosshair"></div>
+
+    <div id="vitals">
+      <div class="hp-bar"><div id="hp-fill"></div></div>
+      <div class="vitals-text"><span id="hp-text">100</span> HP<span id="invuln" class="tag hidden">無敵</span></div>
+    </div>
+
+    <div id="ammo"><span id="ammo-text">-</span></div>
+
+    <ul id="slots"></ul>
+
+    <div id="materials" class="hidden"></div>
+    <div id="build-info" class="hidden"></div>
+
+    <div id="prompt" class="hidden"><span id="prompt-text"></span><div class="hold-bar"><div id="hold-fill"></div></div></div>
+
+    <div id="toast" class="hidden"></div>
+
+    <!-- スマホ操作 -->
+    <div id="touch-ui">
+      <button id="btn-pause" class="tbtn tiny" type="button">॥</button>
+      <div id="stick"><div id="stick-knob"></div></div>
+      <div id="touch-buttons">
+        <button id="btn-reload" class="tbtn" type="button">R</button>
+        <button id="btn-jump" class="tbtn" type="button">跳</button>
+        <button id="btn-use" class="tbtn" type="button">使</button>
+        <button id="btn-fire" class="tbtn big" type="button">攻撃</button>
+      </div>
+      <div id="touch-slots">
+        <button id="btn-slot-0" class="tbtn slot" type="button"></button>
+        <button id="btn-slot-1" class="tbtn slot" type="button"></button>
+        <button id="btn-slot-2" class="tbtn slot" type="button"></button>
+      </div>
+    </div>
   </div>
+
+  <!-- ポーズ -->
+  <section id="pause" class="screen hidden">
+    <div class="panel small">
+      <h2>ポーズ</h2>
+      <p class="hint">W A S D 移動 ／ マウス 視点 ／ 左クリック 攻撃 ／ R リロード ／ 1-3 アイテム ／ E 使う・蘇生 ／ Space ジャンプ</p>
+      <p class="hint">スマホ：左スティック 移動（外まで倒すとダッシュ）／ 画面をなぞる 視点 ／ 右のボタン 攻撃・跳・使う・R</p>
+      <button id="btn-resume" class="primary" type="button">再開</button>
+      <button id="btn-tolobby" class="ghost" type="button">ロビーに戻る</button>
+    </div>
+  </section>
+
+  <!-- スマホは横画面でプレイする -->
+  <section id="rotate" class="screen hidden">
+    <div class="panel small">
+      <h2>スマホを横向きにしてください</h2>
+      <p class="hint">このゲームは横画面専用です。端末の画面回転ロックがオンだと縦のままになるので、切っておいてください。</p>
+    </div>
+  </section>
+
+  <!-- WebGL2 が使えない古い端末 -->
+  <section id="nogl" class="screen hidden">
+    <div class="panel small">
+      <h2>この端末では動きません</h2>
+      <p class="hint">3D描画（WebGL2）に対応したブラウザが必要です。iPhone は iOS 15 以降の Safari、Android は最新の Chrome でお試しください。</p>
+    </div>
+  </section>
 
   <script type="importmap">
   {

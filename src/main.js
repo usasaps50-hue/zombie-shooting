@@ -1,173 +1,395 @@
 import * as THREE from 'three';
-import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { createWorld } from './world.js';
+import { Input } from './input.js';
+import { Player, EYE_HEIGHT } from './player.js';
+import { Weapons } from './weapons.js';
+import { ViewModel } from './viewmodel.js';
+import { Hud } from './hud.js';
+import { Lobby } from './lobby.js';
+import { Teammate, Enemy } from './entities.js';
+import { Effects } from './effects.js';
+import { Builder } from './build.js';
+import { ITEMS } from './data/items.js';
+import { JOBS, PLAYER } from './data/jobs.js';
+import { TURRET, WOOD_DROP, MATERIALS } from './data/builds.js';
+import { IS_TOUCH, QUALITY } from './device.js';
 
-const EYE_HEIGHT = 1.7;
-const PLAYER_RADIUS = 0.4;
-const WALK_SPEED = 4.5;
-const RUN_SPEED = 8.0;
-const JUMP_SPEED = 5.0;
-const GRAVITY = 20.0;
-const ARENA = 40;
+const canvas = document.getElementById('game');
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x8fa5bd);
-scene.fog = new THREE.Fog(0x8fa5bd, 25, 110);
+// three r160 以降は WebGL2 必須。古い端末では真っ暗になる前に理由を出す
+if (!canvas.getContext('webgl2')) {
+  document.getElementById('nogl').classList.remove('hidden');
+  document.getElementById('lobby').classList.add('hidden');
+  throw new Error('WebGL2 not supported');
+}
 
-const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 300);
-camera.position.set(0, EYE_HEIGHT, 0);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY.antialias, powerPreference: 'high-performance' });
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, QUALITY.pixelRatio));
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = QUALITY.softShadow ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
-document.body.appendChild(renderer.domElement);
 
-scene.add(new THREE.HemisphereLight(0xbfd4ea, 0x53585f, 2.4));
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 300);
+const { scene, colliders } = createWorld();
+scene.add(camera);
 
-const sun = new THREE.DirectionalLight(0xfff2e0, 3.0);
-sun.position.set(20, 35, 10);
-sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = -ARENA;
-sun.shadow.camera.right = ARENA;
-sun.shadow.camera.top = ARENA;
-sun.shadow.camera.bottom = -ARENA;
-sun.shadow.camera.far = 100;
-scene.add(sun);
+const input = new Input(canvas);
+const hud = new Hud();
+const viewModel = new ViewModel(camera);
+const effects = new Effects(scene);
+const raycaster = new THREE.Raycaster();
+const pauseEl = document.getElementById('pause');
 
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(ARENA * 2, ARENA * 2),
-  new THREE.MeshStandardMaterial({ color: 0x6d7480, roughness: 0.95 })
-);
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-scene.add(ground);
+const teammates = [
+  new Teammate(scene, { name: 'デモ（三人称）', color: 0x5f7f9f, jobId: 'soldier', position: new THREE.Vector3(0, 0, -4) }),
+  new Teammate(scene, { name: 'アオイ', color: 0x9f5f5f, jobId: 'medic', position: new THREE.Vector3(4, 0, -6) }),
+];
+teammates[1].setDowned(true);
 
-const grid = new THREE.GridHelper(ARENA * 2, 40, 0x545b66, 0x5d646f);
-scene.add(grid);
+// 自分がダウンしたとき、その場に倒れる自分の体
+const playerBody = new Teammate(scene, { name: 'あなた', color: 0x5f7f9f, jobId: 'soldier', position: new THREE.Vector3() });
+playerBody.setVisible(false);
 
-const colliders = [];
+const enemies = [
+  new Enemy(scene, new THREE.Vector3(-12, 0, -22)),
+  new Enemy(scene, new THREE.Vector3(1, 0, -26)),
+  new Enemy(scene, new THREE.Vector3(14, 0, -21)),
+];
 
-function addBox(x, z, width, depth, height, color) {
-  const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(width, height, depth),
-    new THREE.MeshStandardMaterial({ color, roughness: 0.8 })
-  );
-  mesh.position.set(x, height / 2, z);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  scene.add(mesh);
-  colliders.push(new THREE.Box3().setFromObject(mesh));
+const builder = new Builder(scene, colliders, {});
+
+const muzzle = new THREE.PointLight(0xffd9a0, 0, 8);
+scene.add(muzzle);
+
+const SHOVEL_KNOCKBACK = 4.0;
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+
+let game = null;
+let paused = false;
+
+const lobby = new Lobby(startGame);
+
+function startGame(loadout) {
+  const job = JOBS[loadout.jobId];
+  const player = new Player(job);
+  const weapons = new Weapons(loadout.items, onWeaponEvent);
+
+  game = { player, weapons, loadout, job, hold: 0, holdAction: null };
+  input.reset();
+  builder.clear();
+  builder.materials = { ...(job.materials ?? {}) };
+  for (const e of enemies) e.respawn();
+  playerBody.setVisible(false);
+  playerBody.setDowned(false);
+  playerBody.avatar.setHat(job.id);
+  hud.buildSlots(loadout.items);
+  hud.show();
+  viewModel.setItem(weapons.current?.id ?? null);
+  hud.setToast(`合言葉「${loadout.passphrase}」の部屋を開始しました`, 2.5);
+  if (IS_TOUCH) goLandscapeFullscreen();
+  resume();
 }
 
-const rand = (n) => (Math.random() - 0.5) * n;
-for (let i = 0; i < 30; i++) {
-  const w = 1.5 + Math.random() * 3;
-  const d = 1.5 + Math.random() * 3;
-  const h = 1 + Math.random() * 4;
-  const x = rand(ARENA * 1.6);
-  const z = rand(ARENA * 1.6);
-  if (Math.hypot(x, z) < 5) continue;
-  addBox(x, z, w, d, h, new THREE.Color().setHSL(0.08, 0.12, 0.45 + Math.random() * 0.25).getHex());
-}
-
-const wallH = 6;
-addBox(0, -ARENA, ARENA * 2, 1, wallH, 0x8a8f98);
-addBox(0, ARENA, ARENA * 2, 1, wallH, 0x8a8f98);
-addBox(-ARENA, 0, 1, ARENA * 2, wallH, 0x8a8f98);
-addBox(ARENA, 0, 1, ARENA * 2, wallH, 0x8a8f98);
-
-const controls = new PointerLockControls(camera, document.body);
-scene.add(controls.object);
-
-const overlay = document.getElementById('overlay');
-overlay.addEventListener('click', () => controls.lock());
-controls.addEventListener('lock', () => document.body.classList.add('playing'));
-controls.addEventListener('unlock', () => document.body.classList.remove('playing'));
-
-const keys = new Set();
-addEventListener('keydown', (e) => keys.add(e.code));
-addEventListener('keyup', (e) => keys.delete(e.code));
-
-const velocity = new THREE.Vector3();
-let onGround = true;
-
-function collides(pos) {
-  const box = new THREE.Box3(
-    new THREE.Vector3(pos.x - PLAYER_RADIUS, pos.y - EYE_HEIGHT, pos.z - PLAYER_RADIUS),
-    new THREE.Vector3(pos.x + PLAYER_RADIUS, pos.y, pos.z + PLAYER_RADIUS)
-  );
-  return colliders.some((c) => c.intersectsBox(box));
-}
-
-const forward = new THREE.Vector3();
-const right = new THREE.Vector3();
-const move = new THREE.Vector3();
-
-function update(dt) {
-  const pos = controls.object.position;
-
-  camera.getWorldDirection(forward);
-  forward.y = 0;
-  forward.normalize();
-  right.crossVectors(forward, camera.up).normalize();
-
-  move.set(0, 0, 0);
-  if (keys.has('KeyW')) move.add(forward);
-  if (keys.has('KeyS')) move.sub(forward);
-  if (keys.has('KeyD')) move.add(right);
-  if (keys.has('KeyA')) move.sub(right);
-
-  const speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? RUN_SPEED : WALK_SPEED;
-  if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed * dt);
-
-  const stepX = new THREE.Vector3(pos.x + move.x, pos.y, pos.z);
-  if (!collides(stepX)) pos.x = stepX.x;
-  const stepZ = new THREE.Vector3(pos.x, pos.y, pos.z + move.z);
-  if (!collides(stepZ)) pos.z = stepZ.z;
-
-  if (keys.has('Space') && onGround) {
-    velocity.y = JUMP_SPEED;
-    onGround = false;
+// スタート操作のうちに全画面と横固定を頼む。対応していない端末では黙って何も起きない
+async function goLandscapeFullscreen() {
+  try {
+    await document.documentElement.requestFullscreen?.();
+    await screen.orientation?.lock?.('landscape');
+  } catch {
+    /* iOS Safari など未対応。#rotate の案内でカバーする */
   }
-  velocity.y -= GRAVITY * dt;
-  pos.y += velocity.y * dt;
+}
 
-  if (pos.y < EYE_HEIGHT) {
-    pos.y = EYE_HEIGHT;
-    velocity.y = 0;
-    onGround = true;
+function resume() {
+  paused = false;
+  pauseEl.classList.add('hidden');
+  input.requestLock();
+}
+
+function pause() {
+  paused = true;
+  input.reset();
+  builder.hideGhost();
+  pauseEl.classList.remove('hidden');
+  input.releaseLock();
+}
+
+function toLobby() {
+  game = null;
+  paused = false;
+  pauseEl.classList.add('hidden');
+  hud.hide();
+  viewModel.setItem(null);
+  builder.hideGhost();
+  playerBody.setVisible(false);
+  lobby.show();
+}
+
+document.getElementById('btn-resume').addEventListener('click', resume);
+document.getElementById('btn-tolobby').addEventListener('click', toLobby);
+document.getElementById('btn-pause').addEventListener('click', () => {
+  if (game) paused ? resume() : pause();
+});
+canvas.addEventListener('click', () => {
+  if (game && !paused) input.requestLock();
+});
+addEventListener('keydown', (e) => {
+  if (!game) return;
+  if (e.code === 'Escape') paused ? resume() : pause();
+  if (e.code === 'KeyG' && !paused) applyDamage(25);
+});
+document.addEventListener('pointerlockchange', () => {
+  if (game && !paused && !input.locked && !input.isTouch) pause();
+});
+
+function onWeaponEvent(ev) {
+  if (ev.type === 'shoot') shoot(ev.item);
+  else if (ev.type === 'swing') swing(ev.item);
+  else if (ev.type === 'empty') hud.setToast('弾切れ — R でリロード');
+  else if (ev.type === 'reloaded') hud.setToast('リロード完了');
+  else if (ev.type === 'build') return build();
+  else if (ev.type === 'cycleBuild') {
+    const def = builder.cycleType(1);
+    hud.setToast(`${def.name}を選択`, 1.0);
   }
+}
+
+function build() {
+  const result = builder.place();
+  hud.setToast(result.message, result.ok ? 1.4 : 1.6);
+  return result.ok;
+}
+
+// ゾンビを倒したら木を落とす
+function damageEnemy(enemy, amount, now) {
+  const wasAlive = enemy.alive;
+  enemy.hit(amount, now);
+  if (!wasAlive || enemy.alive) return false;
+  const wood = WOOD_DROP.min + Math.floor(Math.random() * (WOOD_DROP.max - WOOD_DROP.min + 1));
+  builder.add('wood', wood);
+  hud.setToast(`ゾンビ撃破 — ${MATERIALS.wood.name}+${wood}`, 1.4);
+  return true;
+}
+
+// 弾道と発砲炎は目の中ではなく、手に持った銃の銃口から出す
+function muzzleOrigin(dir) {
+  const right = new THREE.Vector3().crossVectors(dir, WORLD_UP).normalize();
+  return camera.position.clone()
+    .addScaledVector(right, 0.28)
+    .addScaledVector(WORLD_UP, -0.24)
+    .addScaledVector(dir, 0.95);
+}
+
+function shoot(item) {
+  const dir = camera.getWorldDirection(new THREE.Vector3());
+  muzzle.position.copy(camera.position);
+  muzzle.intensity = 12;
+  raycaster.set(camera.position, dir);
+  raycaster.far = item.range;
+  const hitboxes = enemies.filter((e) => e.alive).map((e) => e.hitbox);
+  const hit = raycaster.intersectObjects(hitboxes, false)[0];
+  const end = hit ? hit.point : camera.position.clone().addScaledVector(dir, item.range);
+  const from = muzzleOrigin(dir);
+  effects.muzzleFlash(from, dir);
+  effects.tracer(from, end);
+  if (hit) {
+    const enemy = enemies.find((e) => e.hitbox === hit.object);
+    if (!damageEnemy(enemy, item.damage, performance.now() / 1000)) {
+      hud.setToast(`ヒット -${item.damage}`, 0.8);
+    }
+  }
+}
+
+// タレットの射撃。銃口の爆発と弾道は他の人からも見える
+function turretShoot(turret, target, now) {
+  const from = turret.muzzle();
+  const to = target.position.clone().setY(1.0);
+  effects.muzzleFlash(from, to.clone().sub(from).normalize());
+  effects.tracer(from, to);
+  damageEnemy(target, TURRET.damage, now);
+}
+
+function swing(item) {
+  const origin = camera.position;
+  const flat = camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize();
+  effects.swingArc(new THREE.Vector3(origin.x, 1.1, origin.z), game.player.yaw, item.range, item.arc);
+
+  let hits = 0;
+  for (const enemy of enemies) {
+    if (!enemy.alive) continue;
+    const to = enemy.position.clone().sub(origin);
+    to.y = 0;
+    const dist = to.length();
+    if (dist > item.range) continue;
+    if (to.normalize().dot(flat) < Math.cos(item.arc / 2)) continue;
+    damageEnemy(enemy, item.damage, performance.now() / 1000);
+    enemy.knockback(to, SHOVEL_KNOCKBACK);
+    hits++;
+  }
+  if (hits) hud.setToast(`ヒット -${item.damage}`, 0.8);
+}
+
+function applyDamage(amount) {
+  const { player } = game;
+  const wentDown = player.damage(amount);
+  if (!wentDown) return;
+  playerBody.position.set(player.position.x, 0, player.position.z);
+  playerBody.avatar.root.rotation.y = player.yaw + Math.PI;
+  playerBody.setDowned(true);
+  playerBody.setVisible(true);
+  hud.setToast('ダウン — 衛生兵の蘇生を待とう', 3);
+}
+
+function contextAction(dt) {
+  const { player, job } = game;
+  if (player.downed) return { text: '倒れています（味方の蘇生を待っています）', progress: 0 };
+
+  const downedNear = teammates.find(
+    (t) => t.downed && t.position.distanceTo(player.position) < 2.5
+  );
+
+  if (job.canRevive && player.bandages > 0 && downedNear) {
+    return holdAction(dt, 'revive', ITEMS.bandage.reviveTime,
+      `${downedNear.name} を蘇生（${input.isTouch ? '「使」長押し' : 'E長押し'}）`,
+      () => {
+        downedNear.setDowned(false);
+        player.bandages--;
+        hud.setToast(`${downedNear.name} を蘇生！ ${PLAYER.reviveInvulnTime}秒間無敵`, 2.5);
+      });
+  }
+
+  if (player.bandages > 0 && player.hp < player.maxHp) {
+    return holdAction(dt, 'heal', ITEMS.bandage.useTime,
+      `包帯を使う（HP+${ITEMS.bandage.heal}／残り${player.bandages}）`,
+      () => {
+        player.heal(ITEMS.bandage.heal);
+        player.bandages--;
+        hud.setToast(`包帯を使った（HP+${ITEMS.bandage.heal}）`);
+      });
+  }
+
+  game.hold = 0;
+  game.holdAction = null;
+  return { text: '', progress: 0 };
+}
+
+function holdAction(dt, key, duration, text, onDone) {
+  if (game.holdAction !== key) {
+    game.holdAction = key;
+    game.hold = 0;
+  }
+  if (input.use) {
+    game.hold += dt;
+    if (game.hold >= duration) {
+      game.hold = 0;
+      onDone();
+      return { text: '', progress: 0 };
+    }
+  } else {
+    game.hold = 0;
+  }
+  return { text, progress: game.hold / duration };
 }
 
 const clock = new THREE.Clock();
-const fpsEl = document.getElementById('fps');
-let frames = 0;
-let fpsTimer = 0;
 
-function animate() {
-  requestAnimationFrame(animate);
+function frame() {
+  requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.1);
+  const now = performance.now() / 1000;
 
-  if (controls.isLocked) update(dt);
+  muzzle.intensity = Math.max(0, muzzle.intensity - dt * 90);
 
-  frames++;
-  fpsTimer += dt;
-  if (fpsTimer >= 0.5) {
-    fpsEl.textContent = Math.round(frames / fpsTimer);
-    frames = 0;
-    fpsTimer = 0;
+  const world = {
+    colliders,
+    structures: builder.structures,
+    player: game && !paused ? game.player : null,
+    onHitPlayer: (enemy, amount) => applyDamage(amount),
+    onBreak: (enemy, structure, amount) => {
+      if (structure.damage(amount)) hud.setToast(`${structure.def.name}が壊された`, 1.4);
+    },
+  };
+  for (const e of enemies) e.update(dt, now, world);
+  for (const s of builder.structures) {
+    if (s.def.kind === 'turret') s.update(dt, enemies, (turret, target) => turretShoot(turret, target, now));
+  }
+  builder.removeDead();
+  effects.update(dt);
+
+  if (game && !paused) {
+    const { player, weapons } = game;
+    player.update(dt, input, colliders);
+    if (!player.downed) player.applyToCamera(camera);
+    weapons.update(dt);
+
+    const slot = input.consumeSlot();
+    if (slot !== null) weapons.select(slot);
+    if (input.consumeReload()) weapons.reload();
+    if (input.fire && !player.downed) weapons.trigger();
+
+    viewModel.setItem(player.downed ? null : weapons.current?.id ?? null);
+    const anim = weapons.animProgress();
+
+    if (weapons.current?.kind === 'build' && !player.downed) builder.aim(camera, player.position);
+    else builder.hideGhost();
+    viewModel.update(dt, anim, Math.min(player.speed / 4.5, 1));
+
+    teammates[0].update(dt, { itemId: weapons.current?.id ?? null, anim });
+    teammates[1].update(dt, { itemId: null, anim: { name: 'idle', t: 0 } });
+
+    if (player.downed) {
+      playerBody.update(dt, { itemId: null, anim: { name: 'idle', t: 0 } });
+      // 倒れた瞬間は自分の体、そのあと味方を観戦する
+      const watchSelf = player.time - player.downedAt < 2.5;
+      const target = watchSelf ? playerBody : (teammates.find((t) => !t.downed) ?? teammates[0]);
+      const eye = target.position.clone().add(new THREE.Vector3(0, 3.2, 4.5));
+      camera.position.lerp(eye, Math.min(dt * 3, 1));
+      camera.lookAt(target.position.clone().setY(watchSelf ? 0.4 : 1.2));
+    }
+
+    const ctx = contextAction(dt);
+    hud.update(dt, {
+      player,
+      weapons,
+      promptText: ctx.text,
+      holdProgress: ctx.progress,
+      builder: game.job.materials ? builder : null,
+    });
+  } else if (game) {
+    hud.update(dt, {
+      player: game.player,
+      weapons: game.weapons,
+      promptText: '',
+      holdProgress: 0,
+      builder: game.job.materials ? builder : null,
+    });
+  } else {
+    camera.position.set(0, EYE_HEIGHT, 8);
+    camera.rotation.set(0, Math.sin(now * 0.12) * 0.35, 0, 'YXZ');
+    teammates[0].update(dt, { itemId: 'pistol', anim: { name: 'idle', t: 0 } });
+    teammates[1].update(dt, { itemId: null, anim: { name: 'idle', t: 0 } });
   }
 
   renderer.render(scene, camera);
 }
-animate();
+frame();
 
-addEventListener('resize', () => {
+const rotateEl = document.getElementById('rotate');
+
+function resize() {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
-});
+  renderer.setPixelRatio(Math.min(devicePixelRatio, QUALITY.pixelRatio));
+
+  const portrait = IS_TOUCH && innerHeight > innerWidth;
+  rotateEl.classList.toggle('hidden', !portrait);
+  if (portrait) input.reset();
+}
+
+addEventListener('resize', resize);
+// iOS は回転直後の innerWidth が古いままなので、少し待ってもう一度合わせる
+addEventListener('orientationchange', () => setTimeout(resize, 300));
+resize();
