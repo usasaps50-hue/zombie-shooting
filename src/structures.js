@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BUILDS, MATERIALS, WALL_SIZE, TURRET } from './data/builds.js';
+import { GOD_TURRET, HOSPITAL } from './data/ultimates.js';
 
 const PAD = 0.02;
 
@@ -55,11 +56,23 @@ export class Structure {
 
   damage(amount) {
     this.hp = Math.max(0, this.hp - amount);
+    this.#showWear();
+    return !this.alive;
+  }
+
+  heal(amount) {
+    if (!this.alive || this.hp >= this.maxHp) return 0;
+    const before = this.hp;
+    this.hp = Math.min(this.maxHp, this.hp + amount);
+    this.#showWear();
+    return this.hp - before;
+  }
+
+  #showWear() {
     const wear = this.hp / this.maxHp;
     this.root.traverse((o) => {
       if (o.isMesh && o.material.color) o.material.color.setScalar(0.4 + wear * 0.6);
     });
-    return !this.alive;
   }
 
   refreshBox() {
@@ -166,15 +179,131 @@ export class Turret extends Structure {
   }
 }
 
+// 衛生兵の必殺技。近くにいる味方とタレットを回復し続ける
+export class Hospital extends Structure {
+  constructor(def, position, yaw) {
+    super(def, position);
+    this.root.rotation.y = yaw;
+
+    const w = 3.0;
+    const h = 2.0;
+    const d = 2.4;
+    const walls = new THREE.Mesh(
+      new THREE.BoxGeometry(w, h, d),
+      new THREE.MeshStandardMaterial({ color: 0xe9eef4, roughness: 0.85 })
+    );
+    walls.position.y = h / 2;
+    const roof = new THREE.Mesh(
+      new THREE.BoxGeometry(w + 0.3, 0.24, d + 0.3),
+      new THREE.MeshStandardMaterial({ color: 0xc25f5f, roughness: 0.8 })
+    );
+    roof.position.y = h + 0.12;
+    const door = new THREE.Mesh(
+      new THREE.BoxGeometry(0.9, 1.4, 0.06),
+      new THREE.MeshStandardMaterial({ color: 0x3c4450, roughness: 0.9 })
+    );
+    door.position.set(0, 0.7, d / 2 + 0.03);
+
+    const crossMat = new THREE.MeshStandardMaterial({ color: 0xd0453f, roughness: 0.7 });
+    const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.8, 0.06), crossMat);
+    const crossH = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.22, 0.06), crossMat);
+    crossV.position.set(-1.0, 1.5, d / 2 + 0.03);
+    crossH.position.copy(crossV.position);
+
+    // 回復が届く範囲を地面に描く
+    const aura = new THREE.Mesh(
+      new THREE.RingGeometry(HOSPITAL.radius - 0.12, HOSPITAL.radius, 40),
+      new THREE.MeshBasicMaterial({ color: 0x8fe3b0, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false })
+    );
+    aura.rotation.x = -Math.PI / 2;
+    aura.position.y = 0.03;
+
+    this.building = new THREE.Group();
+    this.building.add(walls, roof, door, crossV, crossH);
+    this.building.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    this.root.add(this.building, aura);
+    this.refreshBox();
+  }
+
+  // 回復範囲の輪まで当たり判定にすると、ゾンビが遠くから殴り始めてしまう
+  refreshBox() {
+    this.box.setFromObject(this.building);
+  }
+}
+
+// 建築士の必殺技。5秒に一度、範囲攻撃のロケットを撃つ
+export class RocketTurret extends Structure {
+  constructor(def, position, yaw) {
+    super(def, position);
+    this.root.rotation.y = yaw;
+
+    const metal = (color, rough = 0.45) =>
+      new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0.5 });
+
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.72, 0.36, 14), metal(0x6a5f3f, 0.8));
+    base.position.y = 0.18;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.7, 12), metal(0x8a7c50));
+    post.position.y = 0.7;
+
+    this.head = new THREE.Group();
+    this.head.position.y = 1.15;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.6), metal(0xc8a94e));
+    const tube = (x) => {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.9, 12), metal(0x39404a, 0.4));
+      m.rotation.x = Math.PI / 2;
+      m.position.set(x, 0.08, -0.5);
+      return m;
+    };
+    this.head.add(body, tube(-0.2), tube(0.2));
+
+    this.root.add(base, post, this.head);
+    this.root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+
+    this.time = 0;
+    this.readyAt = 1.0;
+    this.refreshBox();
+  }
+
+  muzzle(out = new THREE.Vector3()) {
+    return this.head.localToWorld(out.set(0, 0.08, -1.0));
+  }
+
+  update(dt, enemies, onFire) {
+    this.time += dt;
+
+    let target = null;
+    let best = GOD_TURRET.range;
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const dist = e.position.distanceTo(this.root.position);
+      if (dist < best) {
+        best = dist;
+        target = e;
+      }
+    }
+    if (!target) return;
+
+    const to = target.position.clone().sub(this.root.position);
+    const wanted = Math.atan2(-to.x, -to.z) - this.root.rotation.y;
+    this.head.rotation.y = rotateToward(this.head.rotation.y, wanted, GOD_TURRET.turnSpeed * dt);
+
+    if (this.time < this.readyAt) return;
+    this.readyAt = this.time + GOD_TURRET.interval;
+    onFire(this, target);
+  }
+}
+
 function rotateToward(from, to, maxStep) {
   let delta = ((to - from + Math.PI) % (Math.PI * 2)) - Math.PI;
   if (delta < -Math.PI) delta += Math.PI * 2;
   return from + THREE.MathUtils.clamp(delta, -maxStep, maxStep);
 }
 
+const KINDS = { wall: Wall, turret: Turret, hospital: Hospital, godturret: RocketTurret };
+
 export function createStructure(typeId, position, yaw) {
   const def = BUILDS[typeId];
-  return def.kind === 'turret' ? new Turret(def, position, yaw) : new Wall(def, position, yaw);
+  return new KINDS[def.kind](def, position, yaw);
 }
 
 export function createGhost(typeId) {

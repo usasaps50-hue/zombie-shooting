@@ -111,11 +111,12 @@ export class Player {
     return false;
   }
 
+  // 必殺技のチャージに使うので、実際に回復した量を返す
   heal(amount) {
-    if (this.downed) return false;
-    if (this.hp >= this.maxHp) return false;
+    if (this.downed || this.hp >= this.maxHp) return 0;
+    const before = this.hp;
     this.hp = Math.min(this.maxHp, this.hp + amount);
-    return true;
+    return this.hp - before;
   }
 
   revive() {

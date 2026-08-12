@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Avatar } from './avatar.js';
 import { Zombie, ZOMBIE_HEIGHT } from './zombie.js';
-import { ENEMIES } from './data/jobs.js';
+import { ENEMIES, JOBS } from './data/jobs.js';
 
 function makeLabel() {
   const canvas = document.createElement('canvas');
@@ -34,6 +34,7 @@ function makeLabel() {
 export class Teammate {
   constructor(scene, { name, color, position, jobId = 'soldier' }) {
     this.name = name;
+    this.maxHp = JOBS[jobId].hp;
     this.avatar = new Avatar(color);
     this.avatar.setHat(jobId);
     this.avatar.root.position.copy(position);

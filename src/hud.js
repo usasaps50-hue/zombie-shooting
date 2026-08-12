@@ -3,6 +3,7 @@ import { MATERIALS } from './data/builds.js';
 import { IS_TOUCH } from './device.js';
 
 const CYCLE_HINT = IS_TOUCH ? '「切替」で変更' : 'R で切替';
+const ULT_HINT = IS_TOUCH ? '「必殺」' : 'Q';
 
 export class Hud {
   constructor() {
@@ -20,6 +21,10 @@ export class Hud {
     this.buildInfo = document.getElementById('build-info');
     this.touchSlots = [0, 1, 2].map((i) => document.getElementById(`btn-slot-${i}`));
     this.reloadBtn = document.getElementById('btn-reload');
+    this.ultBar = document.getElementById('ult-bar');
+    this.ultFill = document.getElementById('ult-fill');
+    this.ultText = document.getElementById('ult-text');
+    this.ultBtn = document.getElementById('btn-ult');
     this.toastTimer = 0;
     this.slotIds = [];
   }
@@ -68,9 +73,14 @@ export class Hud {
 
     [...this.slots.children].forEach((li, i) => li.classList.toggle('on', i === weapons.index));
     this.touchSlots.forEach((btn, i) => btn.classList.toggle('on', i === weapons.index));
-    this.reloadBtn.textContent = item?.kind === 'build' ? '切替' : 'R';
 
-    this.#updateBuild(state.builder, item?.kind === 'build' && !player.downed);
+    // シャベルや包帯にはリロードも切替もないので、ボタンごと消す
+    const cycles = item?.kind === 'build';
+    this.reloadBtn.classList.toggle('hidden', !cycles && item?.kind !== 'gun');
+    this.reloadBtn.textContent = cycles ? '切替' : 'R';
+
+    this.#updateUlt(state.ult);
+    this.#updateBuild(state.builder, cycles && !player.downed);
 
     if (promptText) {
       this.prompt.classList.remove('hidden');
@@ -84,6 +94,20 @@ export class Hud {
       this.toastTimer -= dt;
       if (this.toastTimer <= 0) this.toast.classList.add('hidden');
     }
+  }
+
+  #updateUlt(ult) {
+    for (const el of [this.ultBar, this.ultText, this.ultBtn]) el.classList.toggle('hidden', !ult);
+    if (!ult) return;
+
+    const percent = Math.floor(ult.value * 100);
+    this.ultFill.style.width = `${percent}%`;
+    this.ultText.textContent = ult.ready
+      ? `必殺 ${ult.def.name}（${ULT_HINT}）`
+      : `必殺 ${ult.def.name} ${percent}%`;
+    this.ultBar.classList.toggle('ready', ult.ready);
+    this.ultBtn.classList.toggle('ready', ult.ready);
+    this.ultBtn.style.setProperty('--charge', ult.value);
   }
 
   #updateBuild(builder, holdingHammer) {

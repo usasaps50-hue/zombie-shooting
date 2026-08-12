@@ -14,6 +14,7 @@ export class Input {
     this.use = false;
     this.jumpQueued = false;
     this.reloadQueued = false;
+    this.ultQueued = false;
     this.slotQueued = null;
     this.locked = false;
     this.isTouch = IS_TOUCH;
@@ -52,6 +53,12 @@ export class Input {
     return v;
   }
 
+  consumeUlt() {
+    const v = this.ultQueued;
+    this.ultQueued = false;
+    return v;
+  }
+
   consumeSlot() {
     const v = this.slotQueued;
     this.slotQueued = null;
@@ -66,6 +73,7 @@ export class Input {
     this.use = false;
     this.jumpQueued = false;
     this.reloadQueued = false;
+    this.ultQueued = false;
     this.slotQueued = null;
   }
 
@@ -82,6 +90,7 @@ export class Input {
       keys.add(e.code);
       if (e.code === 'Space') this.jumpQueued = true;
       if (e.code === 'KeyR') this.reloadQueued = true;
+      if (e.code === 'KeyQ') this.ultQueued = true;
       if (e.code === 'Digit1') this.slotQueued = 0;
       if (e.code === 'Digit2') this.slotQueued = 1;
       if (e.code === 'Digit3') this.slotQueued = 2;
@@ -191,6 +200,7 @@ export class Input {
     hold('btn-use', () => { this.use = true; }, () => { this.use = false; });
     hold('btn-jump', () => { this.jumpQueued = true; });
     hold('btn-reload', () => { this.reloadQueued = true; });
+    hold('btn-ult', () => { this.ultQueued = true; });
     for (let i = 0; i < 3; i++) hold(`btn-slot-${i}`, () => { this.slotQueued = i; });
   }
 }

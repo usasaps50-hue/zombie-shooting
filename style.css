@@ -100,6 +100,9 @@ button.ghost { background: transparent; border: 1px solid #2a323d; color: #b6c0c
 .hp-bar { height: 10px; background: rgba(0, 0, 0, .5); border-radius: 5px; overflow: hidden; }
 #hp-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #d05656, #e08a4a); transition: width .15s; }
 .vitals-text { font-size: 12px; color: #d7dde4; margin-top: 6px; text-shadow: 0 1px 2px #000; }
+.ult-bar { height: 6px; background: rgba(0, 0, 0, .5); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+.ult-bar.ready { box-shadow: 0 0 8px rgba(232, 196, 106, .9); }
+#ult-fill { height: 100%; width: 0; background: linear-gradient(90deg, #8a6f3a, #e8c46a); transition: width .15s; }
 .tag { background: #4d7ea8; border-radius: 4px; padding: 1px 6px; margin-left: 8px; font-size: 11px; }
 
 #ammo { position: absolute; right: 22px; bottom: 70px; font-size: 30px; font-weight: 700; text-shadow: 0 2px 4px #000; font-variant-numeric: tabular-nums; }
@@ -113,7 +116,7 @@ button.ghost { background: transparent; border: 1px solid #2a323d; color: #b6c0c
 #slots li .key { display: block; font-size: 10px; color: #6d7783; }
 
 #materials {
-  position: absolute; left: 18px; bottom: 58px;
+  position: absolute; left: 18px; bottom: 96px;
   background: rgba(12, 16, 22, .72); border: 1px solid #39424e; border-radius: 8px;
   padding: 6px 12px; font-size: 12px; color: #cbb894; font-variant-numeric: tabular-nums;
 }
@@ -153,10 +156,21 @@ body.touch #touch-ui { display: block; }
   border: 1px solid rgba(255, 255, 255, .3);
 }
 
+/* 親指の届く右下にジャンプを置き、その左上に攻撃を回す */
 #touch-buttons {
-  position: absolute; right: calc(18px + var(--safe-r)); bottom: calc(18px + var(--safe-b));
-  display: grid; grid-template-columns: auto auto; gap: 12px; align-items: end;
+  position: absolute; right: calc(16px + var(--safe-r)); bottom: calc(16px + var(--safe-b));
+  display: grid; gap: 10px;
+  grid-template-areas:
+    "ult    reload"
+    "use    fire"
+    ".      jump";
+  justify-items: center; align-items: end;
 }
+#btn-ult { grid-area: ult; }
+#btn-reload { grid-area: reload; }
+#btn-use { grid-area: use; }
+#btn-fire { grid-area: fire; }
+#btn-jump { grid-area: jump; }
 #touch-slots {
   position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(14px + var(--safe-b));
   display: flex; gap: 8px;
@@ -170,8 +184,17 @@ body.touch #touch-ui { display: block; }
   touch-action: none;
 }
 .tbtn:active { background: rgba(255, 255, 255, .3); }
-.tbtn.big { width: 100px; height: 100px; font-size: 17px; background: rgba(208, 86, 86, .28); border-color: rgba(255, 140, 140, .5); }
+.tbtn.big { width: 92px; height: 92px; font-size: 18px; background: rgba(111, 168, 220, .26); border-color: rgba(150, 200, 240, .5); }
+.tbtn.mid { width: 74px; height: 74px; font-size: 16px; background: rgba(208, 86, 86, .28); border-color: rgba(255, 140, 140, .5); }
 .tbtn.tiny { width: 40px; height: 40px; font-size: 15px; letter-spacing: .1em; }
+/* 溜まった量を円グラフのように塗る */
+.tbtn.ult {
+  --charge: 0;
+  font-size: 13px;
+  background: conic-gradient(rgba(232, 196, 106, .55) calc(var(--charge) * 360deg), rgba(255, 255, 255, .08) 0);
+  border-color: rgba(232, 196, 106, .35); color: #d8ccae;
+}
+.tbtn.ult.ready { color: #fff; border-color: #e8c46a; box-shadow: 0 0 10px rgba(232, 196, 106, .7); }
 .tbtn.slot {
   width: auto; min-width: 74px; height: 40px; border-radius: 20px; padding: 0 12px;
   font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 5px;
@@ -185,14 +208,17 @@ body.touch #ammo { top: calc(10px + var(--safe-t)); right: calc(66px + var(--saf
 body.touch #slots { display: none; }
 body.touch #prompt { top: 44%; }
 body.touch #toast { top: calc(58px + var(--safe-t)); font-size: 13px; }
-body.touch #materials { top: calc(56px + var(--safe-t)); left: calc(16px + var(--safe-l)); bottom: auto; }
+body.touch #materials { top: calc(88px + var(--safe-t)); left: calc(16px + var(--safe-l)); bottom: auto; }
 body.touch #build-info { bottom: calc(62px + var(--safe-b)); font-size: 12px; }
 
 /* 横画面でも背の低い端末では、操作系を一回り小さくする */
 @media (orientation: landscape) and (max-height: 400px) {
   #stick { width: 112px; height: 112px; }
   #stick-knob { width: 50px; height: 50px; margin: -25px 0 0 -25px; }
-  .tbtn { width: 56px; height: 56px; font-size: 14px; }
-  .tbtn.big { width: 86px; height: 86px; font-size: 16px; }
+  #touch-buttons { gap: 8px; }
+  .tbtn { width: 50px; height: 50px; font-size: 13px; }
+  .tbtn.big { width: 80px; height: 80px; font-size: 16px; }
+  .tbtn.mid { width: 64px; height: 64px; font-size: 14px; }
+  .tbtn.ult { font-size: 12px; }
   .tbtn.slot { height: 34px; min-width: 66px; font-size: 11px; }
 }

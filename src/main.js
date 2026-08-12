@@ -9,9 +9,12 @@ import { Lobby } from './lobby.js';
 import { Teammate, Enemy } from './entities.js';
 import { Effects } from './effects.js';
 import { Builder } from './build.js';
+import { createStructure, overlaps } from './structures.js';
+import { UltimateCharge, Projectiles, Drones } from './ultimates.js';
 import { ITEMS } from './data/items.js';
 import { JOBS, PLAYER } from './data/jobs.js';
 import { TURRET, WOOD_DROP, MATERIALS } from './data/builds.js';
+import { ULTIMATES, HOSPITAL, DRONE } from './data/ultimates.js';
 import { IS_TOUCH, QUALITY } from './device.js';
 
 const canvas = document.getElementById('game');
@@ -59,6 +62,8 @@ const enemies = [
 ];
 
 const builder = new Builder(scene, colliders, {});
+const projectiles = new Projectiles(scene, effects);
+const drones = new Drones(scene);
 
 const muzzle = new THREE.PointLight(0xffd9a0, 0, 8);
 scene.add(muzzle);
@@ -76,9 +81,11 @@ function startGame(loadout) {
   const player = new Player(job);
   const weapons = new Weapons(loadout.items, onWeaponEvent);
 
-  game = { player, weapons, loadout, job, hold: 0, holdAction: null };
+  game = { player, weapons, loadout, job, hold: 0, holdAction: null, ult: new UltimateCharge(job.id), godTurret: null };
   input.reset();
   builder.clear();
+  projectiles.clear();
+  drones.clear();
   builder.materials = { ...(job.materials ?? {}) };
   for (const e of enemies) e.respawn();
   playerBody.setVisible(false);
@@ -119,6 +126,8 @@ function pause() {
 function toLobby() {
   game = null;
   paused = false;
+  projectiles.clear();
+  drones.clear();
   pauseEl.classList.add('hidden');
   hud.hide();
   viewModel.setItem(null);
@@ -165,7 +174,9 @@ function build() {
 // ゾンビを倒したら木を落とす
 function damageEnemy(enemy, amount, now) {
   const wasAlive = enemy.alive;
+  const dealt = Math.min(amount, enemy.hp);
   enemy.hit(amount, now);
+  game?.ult.add('damage', dealt);
   if (!wasAlive || enemy.alive) return false;
   const wood = WOOD_DROP.min + Math.floor(Math.random() * (WOOD_DROP.max - WOOD_DROP.min + 1));
   builder.add('wood', wood);
@@ -202,13 +213,110 @@ function shoot(item) {
   }
 }
 
-// タレットの射撃。銃口の爆発と弾道は他の人からも見える
-function turretShoot(turret, target, now) {
-  const from = turret.muzzle();
+// タレットやドローンの射撃。銃口の爆発と弾道は他の人からも見える
+function beamShot(shooter, target, damage, now) {
+  const from = shooter.muzzle();
   const to = target.position.clone().setY(1.0);
   effects.muzzleFlash(from, to.clone().sub(from).normalize());
   effects.tracer(from, to);
-  damageEnemy(target, TURRET.damage, now);
+  damageEnemy(target, damage, now);
+}
+
+function explode(center, radius, damage, now) {
+  for (const enemy of enemies) {
+    if (!enemy.alive) continue;
+    const to = enemy.position.clone().sub(center).setY(0);
+    if (enemy.position.distanceTo(center) > radius) continue;
+    damageEnemy(enemy, damage, now);
+    enemy.knockback(to.normalize(), 3.5);
+  }
+}
+
+function nearestEnemy(from) {
+  let best = null;
+  let bestDist = Infinity;
+  for (const enemy of enemies) {
+    if (!enemy.alive) continue;
+    const dist = enemy.position.distanceTo(from);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = enemy;
+    }
+  }
+  return best;
+}
+
+// 必殺技で出る建物は、見ている方向の少し先に置く
+function placeUltStructure(typeId, distance) {
+  const dir = camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize();
+  const spot = new THREE.Vector3(game.player.position.x, 0, game.player.position.z).addScaledVector(dir, distance);
+  const structure = createStructure(typeId, spot, Math.atan2(-dir.x, -dir.z));
+  scene.add(structure.root);
+  structure.root.updateMatrixWorld(true);
+  structure.refreshBox();
+
+  if (overlaps(structure.box, colliders, builder.structures)) {
+    scene.remove(structure.root);
+    structure.dispose();
+    hud.setToast('ここには置けない — 開けた場所で使おう', 1.8);
+    return null;
+  }
+  builder.structures.push(structure);
+  return structure;
+}
+
+const ULT_ACTIONS = {
+  soldier: () => {
+    const target = nearestEnemy(game.player.position);
+    if (!target) {
+      hud.setToast('近くにゾンビがいない', 1.4);
+      return false;
+    }
+    projectiles.bomb(muzzleOrigin(camera.getWorldDirection(new THREE.Vector3())), target.position);
+    hud.setToast(`${ULTIMATES.soldier.name}を投げた！`, 1.6);
+    return true;
+  },
+
+  medic: () => {
+    if (!placeUltStructure('hospital', 4.2)) return false;
+    hud.setToast(`${ULTIMATES.medic.name}を建てた！ 近くにいると毎秒${HOSPITAL.healPerSecond}回復`, 2.4);
+    return true;
+  },
+
+  architect: () => {
+    const turret = placeUltStructure('godturret', 4.0);
+    if (!turret) return false;
+    game.godTurret = turret;
+    drones.spawn(game.player.position);
+    hud.setToast(`${ULTIMATES.architect.name}！ ドローン${DRONE.count}機が援護する`, 2.4);
+    return true;
+  },
+};
+
+function useUltimate() {
+  const { player, ult, job } = game;
+  if (player.downed) return;
+  if (!ult.ready) {
+    hud.setToast(`${ult.def.name}はチャージ中（${Math.floor(ult.value * 100)}%）`, 1.4);
+    return;
+  }
+  if (ULT_ACTIONS[job.id]()) ult.consume();
+}
+
+// 野戦病院の周りにいる味方とタレットを回復し続ける
+function healAround(hospital, dt) {
+  const amount = HOSPITAL.healPerSecond * dt;
+  const center = hospital.root.position;
+
+  for (const s of builder.structures) {
+    if (s === hospital || !s.alive) continue;
+    if (s.def.kind !== 'turret' && s.def.kind !== 'godturret') continue;
+    if (s.root.position.distanceTo(center) <= HOSPITAL.radius) s.heal(amount);
+  }
+
+  if (!game || paused || game.player.downed) return;
+  const p = game.player.position;
+  if (Math.hypot(p.x - center.x, p.z - center.z) <= HOSPITAL.radius) game.player.heal(amount);
 }
 
 function swing(item) {
@@ -256,6 +364,8 @@ function contextAction(dt) {
       () => {
         downedNear.setDowned(false);
         player.bandages--;
+        // 蘇生は、その味方のHPぶんを回復したものとして必殺技に加算する
+        game.ult.add('heal', downedNear.maxHp);
         hud.setToast(`${downedNear.name} を蘇生！ ${PLAYER.reviveInvulnTime}秒間無敵`, 2.5);
       });
   }
@@ -264,7 +374,7 @@ function contextAction(dt) {
     return holdAction(dt, 'heal', ITEMS.bandage.useTime,
       `包帯を使う（HP+${ITEMS.bandage.heal}／残り${player.bandages}）`,
       () => {
-        player.heal(ITEMS.bandage.heal);
+        game.ult.add('heal', player.heal(ITEMS.bandage.heal));
         player.bandages--;
         hud.setToast(`包帯を使った（HP+${ITEMS.bandage.heal}）`);
       });
@@ -313,20 +423,35 @@ function frame() {
   };
   for (const e of enemies) e.update(dt, now, world);
   for (const s of builder.structures) {
-    if (s.def.kind === 'turret') s.update(dt, enemies, (turret, target) => turretShoot(turret, target, now));
+    if (s.def.kind === 'turret') s.update(dt, enemies, (turret, target) => beamShot(turret, target, TURRET.damage, now));
+    else if (s.def.kind === 'godturret') s.update(dt, enemies, (turret, target) => projectiles.rocket(turret.muzzle(), target.position));
+    else if (s.def.kind === 'hospital') healAround(s, dt);
   }
+  projectiles.update(dt, enemies, (center, radius, damage) => explode(center, radius, damage, now));
+
+  // ゴッドタレットが壊されたら、呼び出したドローンも引き上げる
+  if (game?.godTurret && !game.godTurret.alive) {
+    game.godTurret = null;
+    drones.clear();
+    hud.setToast('ゴッドタレットが壊された', 1.6);
+  }
+
   builder.removeDead();
   effects.update(dt);
 
   if (game && !paused) {
-    const { player, weapons } = game;
+    const { player, weapons, ult } = game;
     player.update(dt, input, colliders);
     if (!player.downed) player.applyToCamera(camera);
     weapons.update(dt);
 
+    ult.tick(dt);
+    drones.update(dt, player.position, enemies, (drone, target) => beamShot(drone, target, DRONE.damage, now));
+
     const slot = input.consumeSlot();
     if (slot !== null) weapons.select(slot);
     if (input.consumeReload()) weapons.reload();
+    if (input.consumeUlt()) useUltimate();
     if (input.fire && !player.downed) weapons.trigger();
 
     viewModel.setItem(player.downed ? null : weapons.current?.id ?? null);
@@ -356,6 +481,7 @@ function frame() {
       promptText: ctx.text,
       holdProgress: ctx.progress,
       builder: game.job.materials ? builder : null,
+      ult,
     });
   } else if (game) {
     hud.update(dt, {
@@ -364,6 +490,7 @@ function frame() {
       promptText: '',
       holdProgress: 0,
       builder: game.job.materials ? builder : null,
+      ult: game.ult,
     });
   } else {
     camera.position.set(0, EYE_HEIGHT, 8);

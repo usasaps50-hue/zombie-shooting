@@ -60,6 +60,25 @@ export class Effects {
     this.#add(mesh, TRACER_LIFE, 1);
   }
 
+  // 爆発。火の玉と、地面を走る輪が同時に広がる
+  explosion(position, radius) {
+    const mat = (color, opacity) => new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(radius * 0.3, 1), mat(0xffd08a, 1));
+    const shock = new THREE.Mesh(new THREE.RingGeometry(radius * 0.5, radius * 0.62, 28), mat(0xff9d2b, 1));
+    shock.rotation.x = -Math.PI / 2;
+    shock.position.y = 0.06 - position.y;
+    const group = new THREE.Group();
+    group.position.copy(position);
+    group.add(core, shock);
+    this.#add(group, 0.45, 0.9, 1.6);
+  }
+
   swingArc(position, yaw, radius, arc) {
     const mesh = new THREE.Mesh(
       new THREE.RingGeometry(radius * 0.72, radius, 28, 1, Math.PI / 2 - arc / 2, arc),
