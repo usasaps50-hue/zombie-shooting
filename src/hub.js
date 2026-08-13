@@ -109,7 +109,7 @@ export function createHub() {
     group.position.set(x, 0, z);
     group.rotation.y = facing;
 
-    const w = 7.4, h = 3.4, d = 5;
+    const w = 7.4, h = 3.8, d = 5;
     // 店員が立つ隙間をあけたいので、建物の前面はカウンターより 1.2m 奥にする
     const back = -d / 2 - 1.2;
     const walls = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
@@ -128,10 +128,10 @@ export function createHub() {
 
     // ひさし。柱2本で支える。低いと店員の帽子が隠れるので高めに張る
     const awning = new THREE.Mesh(new THREE.BoxGeometry(w * 0.95, 0.16, 2.6), mat(accent, 0.7));
-    awning.position.set(0, 3.05, 0.7);
+    awning.position.set(0, 3.4, 0.7);
     for (const side of [-1, 1]) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 3.05, 8), mat(0x6d5540, 0.9));
-      post.position.set(side * w * 0.44, 1.52, 1.85);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 3.4, 8), mat(0x6d5540, 0.9));
+      post.position.set(side * w * 0.44, 1.7, 1.85);
       group.add(post);
     }
 
@@ -140,7 +140,7 @@ export function createHub() {
       [mat(0x2f3a4a), mat(0x2f3a4a), mat(0x2f3a4a), mat(0x2f3a4a),
         new THREE.MeshStandardMaterial({ map: sign(title, subtitle), roughness: 0.9 }), mat(0x2f3a4a)]
     );
-    board.position.set(0, 3.95, 0.85);
+    board.position.set(0, 4.3, 0.85);
 
     group.add(walls, roof, gable, counter, top, awning, board);
     group.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
@@ -154,8 +154,8 @@ export function createHub() {
 
     // 店員はカウンターの内側の一段高いところに立つ。
     // 床と同じ高さだと、カウンターに隠れて頭しか見えない
-    const step = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, 0.7, 1.0), mat(0x9a7550, 0.9));
-    step.position.set(0, 0.35, -0.55);
+    const step = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, 1.05, 1.0), mat(0x9a7550, 0.9));
+    step.position.set(0, 0.525, -0.55);
     group.add(step);
     step.castShadow = true;
     step.receiveShadow = true;
@@ -164,7 +164,7 @@ export function createHub() {
     avatar.setHat(keeper.hat);
     avatar.setItem(keeper.item ?? null);
     const inside = new THREE.Vector3(0, 0, -0.55).applyAxisAngle(new THREE.Vector3(0, 1, 0), facing);
-    avatar.root.position.set(x + inside.x, 0.7, z + inside.z);
+    avatar.root.position.set(x + inside.x, 1.05, z + inside.z);
     // アバターは +Z が正面。facing のぶんだけ回すと広場のほうを向く
     avatar.root.rotation.y = facing;
     scene.add(avatar.root);

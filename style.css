@@ -175,12 +175,13 @@ body.touch #touch-ui { display: block; }
   position: absolute; right: calc(16px + var(--safe-r)); bottom: calc(16px + var(--safe-b));
   display: grid; gap: 10px;
   grid-template-areas:
-    "ult    reload"
-    "use    fire"
-    ".      jump";
+    "skill  ult   reload"
+    ".      use   fire"
+    ".      .     jump";
   justify-items: center; align-items: end;
 }
 #btn-ult { grid-area: ult; }
+#btn-skill { grid-area: skill; }
 #btn-reload { grid-area: reload; }
 #btn-use { grid-area: use; }
 #btn-fire { grid-area: fire; }
@@ -209,6 +210,13 @@ body.touch #touch-ui { display: block; }
   border-color: rgba(232, 196, 106, .35); color: #d8ccae;
 }
 .tbtn.ult.ready { color: #fff; border-color: #e8c46a; box-shadow: 0 0 10px rgba(232, 196, 106, .7); }
+/* スキル。必殺技と同じく、溜まった量を円グラフのように塗る */
+.tbtn.skill {
+  --charge: 0; font-size: 14px;
+  background: conic-gradient(rgba(122, 200, 160, .55) calc(var(--charge) * 360deg), rgba(255, 255, 255, .08) 0);
+  border-color: rgba(122, 200, 160, .35); color: #b6ded0;
+}
+.tbtn.skill.ready { color: #fff; border-color: #7ac8a0; box-shadow: 0 0 10px rgba(122, 200, 160, .7); }
 .tbtn.slot {
   width: auto; min-width: 74px; height: 40px; border-radius: 20px; padding: 0 12px;
   font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 5px;
@@ -228,7 +236,9 @@ body.hub #crosshair,
 body.hub #touch-slots,
 body.hub #btn-fire,
 body.hub #btn-reload,
-body.hub #btn-ult { display: none; }
+body.hub #btn-ult,
+body.hub #btn-skill,
+body.hub #coin-text { display: none; }
 /* 待機場では「待機場に戻る」は出さない */
 body.hub #btn-tohub { display: none; }
 body.hub #touch-buttons { grid-template-areas: "use" "jump"; }
@@ -238,8 +248,23 @@ body.hub .hold-bar { display: none; }
 .shop-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .shop-head h2 { margin: 0; }
 #shop .panel { max-width: 560px; }
-/* 店の品物は横並びだと文字が潰れるので、1行ずつ縦に並べる */
-#shop-list { margin: 14px 0 16px; grid-template-columns: 1fr; }
+/* 店の品物は横並びだと文字が潰れるので、1行ずつ縦に並べる。
+   武器が増えても縦に伸びるだけで済むよう、はみ出したらスクロールさせる */
+#shop-list {
+  margin: 12px 0 14px; grid-template-columns: 1fr; gap: 6px;
+  max-height: min(52vh, 340px); overflow-y: auto; padding-right: 4px;
+}
+.coins { margin-left: auto; color: #e8c46a; font-size: 13px; font-weight: 700; }
+.shop-next { color: #9aa6b3; }
+.shop-card.cant { opacity: .55; }
+.shop-card.cant .shop-action { color: #ff9c9c; }
+
+.gate-form { display: flex; flex-direction: column; gap: 10px; }
+.gate-form label { font-size: 13px; color: #9aa5b1; }
+.gate-summary {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: #cbb894;
+  background: #10161d; border-radius: 8px; padding: 10px 12px;
+}
 .shop-card { display: flex; align-items: center; gap: 12px; text-align: left; }
 .shop-icon { width: 46px; height: 46px; flex: 0 0 46px; object-fit: contain; }
 .shop-emoji {

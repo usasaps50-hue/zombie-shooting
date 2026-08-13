@@ -1,51 +1,37 @@
 import { JOBS } from './data/jobs.js';
+import { progress } from './progress.js';
 
-const WORDS = ['あかつき', 'ゾンビ', 'シャベル', 'まんげつ', 'ひまわり', 'かみなり', 'こもれび', 'てっぺき'];
-
-// 合言葉を決めて待機場へ入るだけの画面。職業とアイテムは待機場のお店で選ぶ
+// タイトル画面。ここから3Dの待機場に入る。
+// 職業・アイテムは待機場のお店、合言葉はバトルゲートで決める
 export class Lobby {
   constructor(onStart) {
     this.onStart = onStart;
     this.jobId = 'soldier';
     this.selected = ['pistol', 'shovel'];
     this.el = document.getElementById('lobby');
-
-    this.passInput = document.getElementById('passphrase');
     this.membersEl = document.getElementById('members');
     this.startBtn = document.getElementById('btn-start');
 
-    this.passInput.value = this.#randomPass();
-    document.getElementById('btn-random').addEventListener('click', () => {
-      this.passInput.value = this.#randomPass();
-    });
     this.startBtn.addEventListener('click', () => this.#start());
-
     this.#renderMembers();
   }
 
   show() {
     this.el.classList.remove('hidden');
+    this.#renderMembers();
   }
 
   hide() {
     this.el.classList.add('hidden');
   }
 
-  #randomPass() {
-    return WORDS[Math.floor(Math.random() * WORDS.length)] + Math.floor(10 + Math.random() * 90);
-  }
-
   #renderMembers() {
     const job = JOBS[this.jobId];
-    this.membersEl.innerHTML = `<li>あなた（${job.name}）<span class="host">ホスト</span></li>`;
+    this.membersEl.innerHTML = `<li>あなた（${job.name}）<span class="host">🪙 ${progress.coins}</span></li>`;
   }
 
   #start() {
     this.hide();
-    this.onStart({
-      passphrase: this.passInput.value.trim() || 'ひとり',
-      jobId: this.jobId,
-      items: [...this.selected],
-    });
+    this.onStart();
   }
 }

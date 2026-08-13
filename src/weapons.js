@@ -1,8 +1,7 @@
-import { ITEMS } from './data/items.js';
-
 export class Weapons {
-  constructor(slotIds, onEvent) {
-    this.slots = slotIds.map((id) => ITEMS[id]).filter(Boolean);
+  // items はレベルを反映済みのアイテム（data/upgrades.js の upgradedItem）
+  constructor(items, onEvent) {
+    this.slots = items.filter(Boolean);
     this.onEvent = onEvent;
     this.index = 0;
     this.time = 0;
@@ -89,6 +88,11 @@ export class Weapons {
     const st = this.state.get(item.id);
     if (st.ammo >= item.magazine) return;
     this.#play('reload', item.reloadTime);
+  }
+
+  // スキルなど、外からモーションを出したいとき用
+  play(name, duration) {
+    this.#play(name, duration);
   }
 
   #play(name, duration) {

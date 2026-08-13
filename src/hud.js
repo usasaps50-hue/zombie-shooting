@@ -1,10 +1,13 @@
 import { ITEMS } from './data/items.js';
 import { MATERIALS } from './data/builds.js';
 import { PLAYER } from './data/jobs.js';
+import { MAX_LEVEL } from './data/upgrades.js';
+import { levelOf } from './progress.js';
 import { IS_TOUCH } from './device.js';
 
 const CYCLE_HINT = IS_TOUCH ? '「切替」で変更' : 'R で切替';
 const ULT_READY = IS_TOUCH ? '準備OK' : 'Q で発動';
+const SKILL_READY = IS_TOUCH ? '準備OK' : 'F で発動';
 
 export class Hud {
   constructor() {
@@ -26,6 +29,9 @@ export class Hud {
     this.ultFill = document.getElementById('ult-fill');
     this.ultText = document.getElementById('ult-text');
     this.ultBtn = document.getElementById('btn-ult');
+    this.skillText = document.getElementById('skill-text');
+    this.skillBtn = document.getElementById('btn-skill');
+    this.coinText = document.getElementById('coin-text');
     this.hurt = document.getElementById('hurt');
     this.toastTimer = 0;
     this.slotIds = [];
@@ -38,8 +44,10 @@ export class Hud {
   }
 
   #iconHtml(id, cls) {
-    return this.icons[id]
-      ? `<img class="${cls}" src="${this.icons[id]}" alt="">`
+    // レベル5まで育てた武器は金色の絵になる
+    const src = this.icons[levelOf(id) >= MAX_LEVEL ? `${id}:gold` : id] ?? this.icons[id];
+    return src
+      ? `<img class="${cls}" src="${src}" alt="">`
       : `<span class="${cls}">${ITEMS[id].icon}</span>`;
   }
 
@@ -106,6 +114,8 @@ export class Hud {
     this.reloadBtn.textContent = cycles ? '切替' : 'R';
 
     this.#updateUlt(state.ult);
+    this.#updateSkill(state.skill);
+    this.coinText.textContent = `🪙 ${state.coins ?? 0}`;
     this.#updateBuild(state.builder, cycles && !player.downed);
 
     if (promptText) {
@@ -134,6 +144,20 @@ export class Hud {
     this.ultBar.classList.toggle('ready', ult.ready);
     this.ultBtn.classList.toggle('ready', ult.ready);
     this.ultBtn.style.setProperty('--charge', ult.value);
+  }
+
+  // シャベルLv3以上のときだけ出る、攻撃を当てて貯めるスキル
+  #updateSkill(skill) {
+    this.skillText.classList.toggle('hidden', !skill);
+    this.skillBtn.classList.toggle('hidden', !skill);
+    if (!skill) return;
+
+    const ratio = Math.min(1, skill.charge / skill.need);
+    this.skillText.textContent = skill.ready
+      ? `${skill.name}　${SKILL_READY}`
+      : `${skill.name}　${skill.charge}/${skill.need}`;
+    this.skillBtn.classList.toggle('ready', skill.ready);
+    this.skillBtn.style.setProperty('--charge', ratio);
   }
 
   #updateBuild(builder, holdingHammer) {

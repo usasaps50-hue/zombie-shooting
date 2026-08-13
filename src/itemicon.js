@@ -33,8 +33,10 @@ export function makeItemIcons(ids, size = 96) {
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 30);
   const icons = {};
 
-  for (const id of ids) {
-    const mesh = createItemMesh(id);
+  // "pistol:gold" のように書くと、レベル5の金色版を描く
+  for (const key of ids) {
+    const [id, variant] = key.split(':');
+    const mesh = createItemMesh(id, variant === 'gold');
     mesh.rotation.set(...(POSE[id] ?? [0.2, 0.6, 0]));
     scene.add(mesh);
     mesh.updateMatrixWorld(true);
@@ -51,7 +53,7 @@ export function makeItemIcons(ids, size = 96) {
     camera.updateProjectionMatrix();
 
     renderer.render(scene, camera);
-    icons[id] = renderer.domElement.toDataURL('image/png');
+    icons[key] = renderer.domElement.toDataURL('image/png');
 
     scene.remove(mesh);
     mesh.traverse((o) => {

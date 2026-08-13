@@ -37,6 +37,8 @@ export class Player {
     this.speed = 0;
     this.time = 0;
     this.hurtAt = -99;
+    // 持っている武器のレベルでつく移動速度ボーナス
+    this.speedBonus = 0;
   }
 
   get invulnerable() {
@@ -73,7 +75,7 @@ export class Player {
     }
 
     const base = input.run ? RUN_SPEED : WALK_SPEED;
-    const speed = base * this.job.speedScale;
+    const speed = base * this.job.speedScale * (1 + this.speedBonus);
     this.speed = Math.min(len, 1) * speed;
 
     const p = this.position;

@@ -172,13 +172,14 @@ export class Avatar {
     if (this.hat) this.head.add(this.hat);
   }
 
-  setItem(id) {
-    if (this.itemId === id) return;
+  setItem(id, gold = false) {
+    if (this.itemId === id && this.itemGold === gold) return;
     this.itemId = id;
+    this.itemGold = gold;
     this.hand.clear();
     if (!id) return;
     // アバターは +Z を向いている。アイテムは銃口が -Z のまま作られているので反転させる。
-    const mesh = createItemMesh(id);
+    const mesh = createItemMesh(id, gold);
     if (id === 'shovel' || id === 'hammer') {
       this.hand.rotation.x = -HOLD_ARM_X.shovel;
       mesh.scale.setScalar(0.75);
@@ -254,6 +255,13 @@ export class Avatar {
       this.body.rotation.y = THREE.MathUtils.lerp(0.95, -0.75, swing);
     } else if (name === 'swap') {
       armR += (1 - smooth(t)) * 1.0;
+    } else if (name === 'spin') {
+      // ローリングスマッシュ。体ごと2回転しながらシャベルを振り回す
+      armR = -1.55;
+      armRz = -1.15;
+      armL = -0.9;
+      armLz = 0.45;
+      this.body.rotation.y = t * Math.PI * 4;
     } else if (name === 'wave') {
       // 右手を上げて、ひじから先を左右に振る。店員はずっとこれ
       armR = -2.7;
@@ -272,7 +280,7 @@ export class Avatar {
       this.body.position.z = -recoil * 0.14;
     }
 
-    if (name !== 'swing' && name !== 'wave') {
+    if (name !== 'swing' && name !== 'wave' && name !== 'spin') {
       this.body.rotation.y = THREE.MathUtils.lerp(this.body.rotation.y, 0, dt * 10);
     }
 

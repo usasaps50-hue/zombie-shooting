@@ -130,7 +130,12 @@ function armored(base, armorId, id, name) {
   };
 }
 
-export const ENEMIES = {
+// 落とすコインは硬さに比例させる。通常ゾンビ15枚、ミュータント60枚
+function withCoins(def) {
+  return { ...def, coins: Math.round(def.hp / 5) };
+}
+
+export const ENEMIES = Object.fromEntries(Object.entries({
   normal: NORMAL_ZOMBIE,
   blue: BLUE_ZOMBIE,
   silver: armored(NORMAL_ZOMBIE, 'silver', 'silver', '銀の装甲ゾンビ'),
@@ -140,4 +145,4 @@ export const ENEMIES = {
   mutant: MUTANT,
   mutantSilver: armored(MUTANT, 'silver', 'mutantSilver', '銀装甲のミュータント'),
   mutantGold: armored(MUTANT, 'gold', 'mutantGold', '金装甲のミュータント'),
-};
+}).map(([id, def]) => [id, withCoins(def)]));

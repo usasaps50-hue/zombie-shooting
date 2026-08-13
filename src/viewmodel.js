@@ -3,7 +3,9 @@ import * as THREE from 'three';
 const smooth = (t) => t * t * (3 - 2 * t);
 const phase = (t, a, b) => THREE.MathUtils.clamp((t - a) / (b - a), 0, 1);
 
-export function createItemMesh(id) {
+const GOLD = new THREE.Color(0xe0b23c);
+
+export function createItemMesh(id, gold = false) {
   const g = new THREE.Group();
   const mat = (color, rough = 0.6) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0.2 });
 
@@ -54,7 +56,16 @@ export function createItemMesh(id) {
     g.add(roll, band);
   }
 
-  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; } });
+  g.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    // レベル5の金色。元の濃淡は少し残して、のっぺりしないようにする
+    if (gold) {
+      o.material.color.lerp(GOLD, 0.82);
+      o.material.metalness = 0.6;
+      o.material.roughness = Math.min(o.material.roughness, 0.4);
+    }
+  });
   return g;
 }
 
@@ -68,11 +79,12 @@ export class ViewModel {
     this.bob = 0;
   }
 
-  setItem(id) {
-    if (this.itemId === id) return;
+  setItem(id, gold = false) {
+    if (this.itemId === id && this.gold === gold) return;
     if (this.current) this.root.remove(this.current);
     this.itemId = id;
-    this.current = id ? createItemMesh(id) : null;
+    this.gold = gold;
+    this.current = id ? createItemMesh(id, gold) : null;
     if (this.current) this.root.add(this.current);
   }
 

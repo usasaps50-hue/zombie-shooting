@@ -7,8 +7,10 @@ import { ViewModel } from './viewmodel.js';
 import { Hud } from './hud.js';
 import { Lobby } from './lobby.js';
 import { createHub, TALK_RANGE } from './hub.js';
-import { Shop, syncJobItems } from './shop.js';
+import { Shop, syncJobItems, randomPass } from './shop.js';
 import { makeItemIcons } from './itemicon.js';
+import { upgradedItem, MAX_LEVEL, ROLLING_SMASH } from './data/upgrades.js';
+import { progress, levelOf, addCoins } from './progress.js';
 import { Teammate, Enemy } from './entities.js';
 import { Effects } from './effects.js';
 import { Builder } from './build.js';
@@ -84,8 +86,10 @@ scene.add(muzzle);
 const SHOVEL_KNOCKBACK = 4.0;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
-// HUDと店で使う武器アイコン。実際の3Dモデルを描いた画像
-const ITEM_ICONS = makeItemIcons(['pistol', 'shovel', 'hammer', 'bandage']);
+// HUDと店で使う武器アイコン。実際の3Dモデルを描いた画像（金色版も作っておく）
+const ITEM_ICONS = makeItemIcons([
+  'pistol', 'shovel', 'hammer', 'bandage', 'pistol:gold', 'shovel:gold',
+]);
 hud.setIcons(ITEM_ICONS);
 
 const hub = createHub();
@@ -97,9 +101,12 @@ let place = 'lobby';
 let hubPlayer = null;
 let hubTime = 0;
 let usePressed = false;
-let loadout = { passphrase: 'ひとり', jobId: 'soldier', items: ['pistol', 'shovel'] };
+let loadout = { passphrase: randomPass(), jobId: 'soldier', items: ['pistol', 'shovel'] };
 
-const shop = new Shop(ITEM_ICONS, () => hud.setToast('そうびを変えた', 1.2));
+const shop = new Shop(ITEM_ICONS, {
+  onChange: () => hud.setToast('そうびを変えた', 1.2),
+  onBattle: () => startGame(loadout),
+});
 const lobby = new Lobby(enterHub);
 
 // 待機場へ。カメラを待機場のシーンに移して歩けるようにする
@@ -131,9 +138,17 @@ function enterHub(next) {
 function startGame(loadout) {
   const job = JOBS[loadout.jobId];
   const player = new Player(job);
-  const weapons = new Weapons(loadout.items, onWeaponEvent);
+  // レベルを反映したアイテムを持っていく
+  const weapons = new Weapons(loadout.items.map((id) => upgradedItem(id, levelOf(id))), onWeaponEvent);
+  const hasSkill = loadout.items.some((id) => upgradedItem(id, levelOf(id)).effects.skill);
 
-  game = { player, weapons, loadout, job, hold: 0, holdAction: null, ult: new UltimateCharge(job.id) };
+  game = {
+    player, weapons, loadout, job, hold: 0, holdAction: null,
+    ult: new UltimateCharge(job.id),
+    skill: hasSkill ? { name: 'ローリングスマッシュ', charge: 0, need: ROLLING_SMASH.need, ready: false } : null,
+    spin: 0,
+    coins: 0,
+  };
   place = 'battle';
   hubPlayer = null;
   scene.add(camera);
@@ -256,13 +271,30 @@ function rollDrops(def) {
   return gained.join('　');
 }
 
-function damageEnemy(enemy, amount, now) {
+// source はダメージを出した武器。レベルの特典はこれで判定する
+function damageEnemy(enemy, amount, now, source = null) {
   const dealt = Math.min(amount, enemy.hp);
   // ジャンプ中など、当たらないこともある
   if (!enemy.hit(amount, now)) return false;
   game?.ult.add('damage', dealt);
+
+  const bonus = source?.effects;
+  // Lv5のシャベル：当てたダメージの半分を吸収する
+  if (bonus?.lifesteal && game) game.player.heal(dealt * bonus.lifesteal);
+
   if (enemy.alive) return false;
-  hud.setToast(`${enemy.def.name}撃破 — ${rollDrops(enemy.def)}`, 1.6);
+
+  if (game) {
+    const coins = enemy.def.coins;
+    addCoins(coins);
+    game.coins += coins;
+    // Lv3・Lv4のピストル：その武器で倒したときだけ効く
+    if (bonus?.healOnKill) game.player.heal(bonus.healOnKill);
+    if (bonus?.invulnOnKill) {
+      game.player.invulnUntil = Math.max(game.player.invulnUntil, game.player.time + bonus.invulnOnKill);
+    }
+    hud.setToast(`${enemy.def.name}撃破 — ${rollDrops(enemy.def)}　🪙+${coins}`, 1.6);
+  }
   return true;
 }
 
@@ -289,7 +321,7 @@ function shoot(item) {
   effects.tracer(from, end);
   if (hit) {
     const enemy = enemies.find((e) => e.hitbox === hit.object);
-    if (!damageEnemy(enemy, item.damage, performance.now() / 1000)) {
+    if (!damageEnemy(enemy, item.damage, performance.now() / 1000, item)) {
       hud.setToast(`ヒット -${item.damage}`, 0.8);
     }
   }
@@ -423,11 +455,57 @@ function swing(item) {
     const dist = to.length();
     if (dist > item.range) continue;
     if (to.normalize().dot(flat) < Math.cos(item.arc / 2)) continue;
-    damageEnemy(enemy, item.damage, performance.now() / 1000);
+    damageEnemy(enemy, item.damage, performance.now() / 1000, item);
     enemy.knockback(to, SHOVEL_KNOCKBACK);
     hits++;
   }
-  if (hits) hud.setToast(`ヒット -${item.damage}`, 0.8);
+  if (!hits) return;
+  hud.setToast(`ヒット -${item.damage}`, 0.8);
+  chargeSkill(item);
+}
+
+// 攻撃を当てた回数でスキルが貯まる。1回の振りで何体当てても1回ぶん
+function chargeSkill(item) {
+  const { skill } = game;
+  if (!skill || !item.effects?.skill || skill.ready) return;
+  skill.charge = Math.min(skill.need, skill.charge + 1);
+  skill.ready = skill.charge >= skill.need;
+  if (skill.ready) hud.setToast(`${skill.name}が使える！`, 1.6);
+}
+
+// シャベルLv3のスキル。回転して全方向のゾンビを巻き込む
+function useSkill() {
+  const { player, weapons, skill } = game;
+  if (!skill || player.downed) return;
+  const item = weapons.current;
+  if (!item?.effects?.skill) {
+    hud.setToast('シャベルを持っているときに使えます', 1.4);
+    return;
+  }
+  if (!skill.ready) {
+    hud.setToast(`${skill.name}は 攻撃${skill.need - skill.charge}回ぶん たりない`, 1.4);
+    return;
+  }
+
+  skill.charge = 0;
+  skill.ready = false;
+  game.spin = ROLLING_SMASH.spinTime;
+  weapons.play('swing', ROLLING_SMASH.spinTime);
+
+  const origin = camera.position;
+  const range = ROLLING_SMASH.range * (1 + (item.effects.rangeBonus ?? 0));
+  effects.swingArc(new THREE.Vector3(origin.x, 1.1, origin.z), player.yaw, range, Math.PI * 2);
+
+  const now = performance.now() / 1000;
+  const damage = Math.round(item.damage * ROLLING_SMASH.damageScale);
+  for (const enemy of enemies) {
+    if (!enemy.alive) continue;
+    const to = enemy.position.clone().sub(origin).setY(0);
+    if (to.length() > range) continue;
+    damageEnemy(enemy, damage, now, item);
+    enemy.knockback(to.normalize(), SHOVEL_KNOCKBACK);
+  }
+  hud.setToast(`${skill.name}！`, 1.4);
 }
 
 // ミュータントが狙う候補。人・味方・建てたものの位置を集める
@@ -470,6 +548,12 @@ function smashGround(enemy) {
 function hurtAnim(player) {
   const t = (player.time - player.hurtAt) / PLAYER.hurtTime;
   return t >= 0 && t < 1 ? { name: 'hurt', t } : null;
+}
+
+// 回転斬りの最中は、三人称でもぐるぐる回して見せる
+function spinAnim() {
+  if (!game.spin) return null;
+  return { name: 'spin', t: 1 - game.spin / ROLLING_SMASH.spinTime };
 }
 
 function applyDamage(amount) {
@@ -551,10 +635,6 @@ function nearestZone() {
 }
 
 function enterZone(zone) {
-  if (zone.id === 'battle') {
-    startGame(loadout);
-    return;
-  }
   shop.show(zone.id, loadout);
   input.reset();
   input.releaseLock();
@@ -639,20 +719,28 @@ function frame() {
     ult.tick(dt);
     drones.update(dt, player.position, enemies, (drone, target) => beamShot(drone, target, DRONE.damage, now));
 
+    game.spin = Math.max(0, game.spin - dt);
+
     const slot = input.consumeSlot();
     if (slot !== null) weapons.select(slot);
     if (input.consumeReload()) weapons.reload();
     if (input.consumeUlt()) useUltimate();
+    if (input.consumeSkill()) useSkill();
     if (input.fire && !player.downed) weapons.trigger();
 
-    viewModel.setItem(player.downed ? null : weapons.current?.id ?? null);
+    // 持っている武器のレベル特典（シャベルLv2の移動速度など）
+    player.speedBonus = weapons.current?.effects?.speedBonus ?? 0;
+
+    const held = player.downed ? null : weapons.current?.id ?? null;
+    viewModel.setItem(held, held ? levelOf(held) >= MAX_LEVEL : false);
     const anim = weapons.animProgress();
 
     if (weapons.current?.kind === 'build' && !player.downed) builder.aim(camera, player.position);
     else builder.hideGhost();
     viewModel.update(dt, anim, Math.min(player.speed / 4.5, 1));
 
-    teammates[0].update(dt, { itemId: weapons.current?.id ?? null, anim: hurtAnim(player) ?? anim });
+    teammates[0].avatar.setItem(held, held ? levelOf(held) >= MAX_LEVEL : false);
+    teammates[0].update(dt, { itemId: held, anim: spinAnim() ?? hurtAnim(player) ?? anim });
     teammates[1].update(dt, { itemId: null, anim: { name: 'idle', t: 0 } });
 
     if (player.downed) {
@@ -673,6 +761,8 @@ function frame() {
       holdProgress: ctx.progress,
       builder: game.job.materials ? builder : null,
       ult,
+      skill: game.skill,
+      coins: progress.coins,
     });
   } else if (game) {
     hud.update(dt, {
@@ -682,6 +772,8 @@ function frame() {
       holdProgress: 0,
       builder: game.job.materials ? builder : null,
       ult: game.ult,
+      skill: game.skill,
+      coins: progress.coins,
     });
   } else {
     camera.position.set(0, EYE_HEIGHT, 8);
