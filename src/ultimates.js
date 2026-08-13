@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ULTIMATES, BOMB, GOD_TURRET, DRONE } from './data/ultimates.js';
+import { makeLabel, hpColor } from './label.js';
 
 export class UltimateCharge {
   constructor(jobId) {
@@ -137,11 +138,26 @@ class Drone {
     }
     this.root.add(body, eye);
     this.root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+
+    this.label = makeLabel(1.0);
+    this.label.sprite.position.y = 0.42;
+    this.root.add(this.label.sprite);
+    this.#refreshLabel();
+
     scene.add(this.root);
   }
 
   get alive() {
     return this.hp > 0;
+  }
+
+  #refreshLabel() {
+    this.label.draw(`${Math.ceil(this.hp)} HP`, hpColor(this.hp, DRONE.hp));
+  }
+
+  damage(amount) {
+    this.hp = Math.max(0, this.hp - amount);
+    this.#refreshLabel();
   }
 
   muzzle(out = new THREE.Vector3()) {
@@ -169,6 +185,7 @@ class Drone {
   }
 
   dispose(scene) {
+    this.label.dispose();
     scene.remove(this.root);
     this.root.traverse((o) => {
       if (!o.isMesh) return;
@@ -219,6 +236,21 @@ export class Drones {
       }
       drone.update(dt, anchor, target, onShoot);
     }
+  }
+
+  // ミュータントの攻撃や着地でドローンを壊す
+  damageAt(center, radius, amount) {
+    let hits = 0;
+    for (const drone of this.list) {
+      if (!drone.alive || drone.root.position.distanceTo(center) > radius) continue;
+      drone.damage(amount);
+      hits++;
+    }
+    return hits;
+  }
+
+  positions() {
+    return this.list.filter((d) => d.alive).map((d) => d.root.position);
   }
 
   clear() {

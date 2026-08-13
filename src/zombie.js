@@ -1,11 +1,5 @@
 import * as THREE from 'three';
-
-// canvas は sRGB なので明示しないと色が線形として扱われ、白飛びする
-function canvasTexture(canvas) {
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
+import { canvasTexture, grungeTexture } from './textures.js';
 
 const TORSO_W = 1.5, TORSO_H = 1.5, TORSO_D = 0.75;
 const HEAD_W = 1.0, HEAD_H = 0.95, HEAD_D = 1.0;
@@ -16,25 +10,6 @@ const LEG_GAP = 0.06;
 // R6リグは全高3.95。人の背丈(約1.8m)に合わせて縮める
 export const ZOMBIE_SCALE = 1.8 / (LEG_H + TORSO_H + HEAD_H);
 export const ZOMBIE_HEIGHT = 1.8;
-
-function grungeTexture(base, dark, spot, density = 260) {
-  const size = 128;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, size, size);
-  for (let i = 0; i < density; i++) {
-    ctx.fillStyle = Math.random() > 0.5 ? dark : spot;
-    ctx.globalAlpha = 0.08 + Math.random() * 0.18;
-    ctx.beginPath();
-    ctx.arc(Math.random() * size, Math.random() * size, 1 + Math.random() * 3.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-  return canvasTexture(canvas);
-}
 
 function faceTexture(skin) {
   const size = 128;
@@ -105,7 +80,7 @@ const SKINS = {
 };
 
 // 装甲の色。素の金属らしく見せたいのでテクスチャは貼らない
-const ARMORS = {
+export const ARMORS = {
   silver: { plate: 0xc3c9d1, trim: 0x8d949d },
   gold: { plate: 0xd9b23f, trim: 0xa8842a },
 };

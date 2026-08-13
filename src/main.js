@@ -13,8 +13,8 @@ import { createStructure, overlaps } from './structures.js';
 import { UltimateCharge, Projectiles, Drones } from './ultimates.js';
 import { ITEMS } from './data/items.js';
 import { JOBS, PLAYER } from './data/jobs.js';
-import { TURRET, WOOD_DROP, MATERIALS } from './data/builds.js';
-import { ULTIMATES, HOSPITAL, DRONE } from './data/ultimates.js';
+import { TURRET, MATERIALS } from './data/builds.js';
+import { ULTIMATES, HOSPITAL, DRONE, GOD_TURRET_ODDS } from './data/ultimates.js';
 import { IS_TOUCH, QUALITY } from './device.js';
 
 const canvas = document.getElementById('game');
@@ -64,6 +64,11 @@ const enemies = [
   new Enemy(scene, new THREE.Vector3(20, 0, -36), 'blue'),
   new Enemy(scene, new THREE.Vector3(-6, 0, -30), 'silver'),
   new Enemy(scene, new THREE.Vector3(8, 0, -32), 'gold'),
+  new Enemy(scene, new THREE.Vector3(-16, 0, -40), 'blueSilver'),
+  new Enemy(scene, new THREE.Vector3(16, 0, -42), 'blueGold'),
+  new Enemy(scene, new THREE.Vector3(0, 0, -44), 'mutant'),
+  new Enemy(scene, new THREE.Vector3(-26, 0, -46), 'mutantSilver'),
+  new Enemy(scene, new THREE.Vector3(26, 0, -48), 'mutantGold'),
 ];
 
 const builder = new Builder(scene, colliders, {});
@@ -176,16 +181,25 @@ function build() {
   return result.ok;
 }
 
-// ゾンビを倒したら木を落とす
+// 倒したゾンビの種類ごとに決まった素材を落とす
+function rollDrops(def) {
+  const gained = [];
+  for (const [id, [min, max]] of Object.entries(def.drop)) {
+    const amount = min + Math.floor(Math.random() * (max - min + 1));
+    if (amount <= 0) continue;
+    builder.add(id, amount);
+    gained.push(`${MATERIALS[id].name}+${amount}`);
+  }
+  return gained.join('　');
+}
+
 function damageEnemy(enemy, amount, now) {
-  const wasAlive = enemy.alive;
   const dealt = Math.min(amount, enemy.hp);
-  enemy.hit(amount, now);
+  // ジャンプ中など、当たらないこともある
+  if (!enemy.hit(amount, now)) return false;
   game?.ult.add('damage', dealt);
-  if (!wasAlive || enemy.alive) return false;
-  const wood = WOOD_DROP.min + Math.floor(Math.random() * (WOOD_DROP.max - WOOD_DROP.min + 1));
-  builder.add('wood', wood);
-  hud.setToast(`ゾンビ撃破 — ${MATERIALS.wood.name}+${wood}`, 1.4);
+  if (enemy.alive) return false;
+  hud.setToast(`${enemy.def.name}撃破 — ${rollDrops(enemy.def)}`, 1.6);
   return true;
 }
 
@@ -289,11 +303,20 @@ const ULT_ACTIONS = {
     return true;
   },
 
+  // 何が出るかは運。3割でドローン、3割でロケット砲、4割は失敗
   architect: () => {
-    const turret = placeUltStructure('godturret', 4.0);
-    if (!turret) return false;
-    drones.spawn(game.player.position);
-    hud.setToast(`${ULTIMATES.architect.name}！ ドローン${drones.count}機が援護する（最大${DRONE.max}機）`, 2.4);
+    const roll = Math.random();
+    if (roll < GOD_TURRET_ODDS.drones) {
+      drones.spawn(game.player.position);
+      hud.setToast(`${ULTIMATES.architect.name}：ドローン${DRONE.count}機！（いま${drones.count}／${DRONE.max}機）`, 2.4);
+      return true;
+    }
+    if (roll < GOD_TURRET_ODDS.drones + GOD_TURRET_ODDS.rocket) {
+      if (!placeUltStructure('godturret', 4.0)) return false;
+      hud.setToast(`${ULTIMATES.architect.name}：ロケット砲！`, 2.4);
+      return true;
+    }
+    hud.setToast(`${ULTIMATES.architect.name}：失敗… 何も出なかった`, 2.4);
     return true;
   },
 };
@@ -342,6 +365,42 @@ function swing(item) {
     hits++;
   }
   if (hits) hud.setToast(`ヒット -${item.damage}`, 0.8);
+}
+
+// ミュータントが狙う候補。人・味方・建てたものの位置を集める
+function slamTargets() {
+  const spots = builder.structures.filter((s) => s.alive).map((s) => s.root.position);
+  for (const mate of teammates) spots.push(mate.position);
+  spots.push(...drones.positions());
+  if (game && !paused && !game.player.downed) {
+    spots.push(new THREE.Vector3(game.player.position.x, 0, game.player.position.z));
+  }
+  return spots;
+}
+
+// ミュータントの着地。地面が割れて、周りのもの全部にダメージ
+function slam(enemy, damage, radius, now) {
+  const center = enemy.position.clone().setY(0);
+  effects.groundCrack(center, radius);
+  hud.setToast(`${enemy.def.name}が着地した！`, 1.6);
+
+  for (const s of builder.structures) {
+    if (s.alive && s.root.position.distanceTo(center) <= radius && s.damage(damage)) {
+      hud.setToast(`${s.def.name}が壊された`, 1.4);
+    }
+  }
+  drones.damageAt(center, radius, damage);
+
+  if (!game || paused) return;
+  const p = game.player.position;
+  if (Math.hypot(p.x - center.x, p.z - center.z) <= radius) applyDamage(damage);
+}
+
+// 叩きつけで地面が割れる
+function smashGround(enemy) {
+  const dir = new THREE.Vector3(-Math.sin(enemy.facing), 0, -Math.cos(enemy.facing));
+  const spot = enemy.position.clone().setY(0).addScaledVector(dir, enemy.def.reach * 0.6);
+  effects.groundCrack(spot, enemy.def.crackRadius);
 }
 
 // 被弾モーションは、撃つ・振るモーションより優先して他の人に見せる
@@ -427,10 +486,20 @@ function frame() {
     colliders,
     structures: builder.structures,
     player: game && !paused ? game.player : null,
-    onHitPlayer: (enemy, amount) => applyDamage(amount),
+    onHitPlayer: (enemy, amount) => {
+      applyDamage(amount);
+      if (enemy.def.crackRadius) smashGround(enemy);
+      // ミュータントは殴った範囲のドローンも巻き込む
+      if (enemy.def.breaksDrones) {
+        drones.damageAt(enemy.position, enemy.def.reach + 1.5, enemy.def.droneDamage);
+      }
+    },
     onBreak: (enemy, structure, amount) => {
+      if (enemy.def.crackRadius) smashGround(enemy);
       if (structure.damage(amount)) hud.setToast(`${structure.def.name}が壊された`, 1.4);
     },
+    onSlam: (enemy, damage, radius) => slam(enemy, damage, radius, now),
+    slamTargets,
   };
   for (const e of enemies) e.update(dt, now, world);
   for (const s of builder.structures) {
@@ -439,12 +508,6 @@ function frame() {
     else if (s.def.kind === 'hospital') healAround(s, dt);
   }
   projectiles.update(dt, enemies, (center, radius, damage) => explode(center, radius, damage, now));
-
-  // ゴッドタレットが全部壊されたら、呼び出したドローンも引き上げる
-  if (drones.count && !builder.structures.some((s) => s.def.kind === 'godturret' && s.alive)) {
-    drones.clear();
-    hud.setToast('ゴッドタレットが壊された — ドローンが引き上げた', 1.8);
-  }
 
   builder.removeDead();
   effects.update(dt);

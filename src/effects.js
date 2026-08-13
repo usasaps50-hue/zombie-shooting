@@ -79,6 +79,42 @@ export class Effects {
     this.#add(group, 0.45, 0.9, 1.6);
   }
 
+  // 地割れ。放射状のヒビと砂ぼこりが同時に広がる
+  groundCrack(position, radius) {
+    const flat = (geometry, color) => {
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }));
+      mesh.rotation.x = -Math.PI / 2;
+      return mesh;
+    };
+
+    const group = new THREE.Group();
+    group.position.set(position.x, 0.04, position.z);
+
+    // 内半径0の細い扇形が、中心から外へ伸びる1本のヒビになる
+    const cracks = 10;
+    for (let i = 0; i < cracks; i++) {
+      const angle = (i / cracks) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+      const length = radius * (0.5 + Math.random() * 0.5);
+      group.add(flat(new THREE.RingGeometry(0.12, length, 1, 1, angle, 0.1), 0x14100a));
+    }
+    group.add(flat(new THREE.CircleGeometry(radius * 0.3, 20), 0x2a2318));
+    group.add(flat(new THREE.RingGeometry(radius * 0.72, radius * 0.92, 30), 0xbfae86));
+
+    // 舞い上がる砂ぼこり。大きくするとヒビが隠れるので控えめに
+    const dust = new THREE.Mesh(
+      new THREE.SphereGeometry(radius * 0.28, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0xb8a67c, transparent: true, depthWrite: false })
+    );
+    group.add(dust);
+
+    this.#add(group, 0.9, 0.95, 0.5);
+  }
+
   swingArc(position, yaw, radius, arc) {
     const mesh = new THREE.Mesh(
       new THREE.RingGeometry(radius * 0.72, radius, 28, 1, Math.PI / 2 - arc / 2, arc),

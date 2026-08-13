@@ -28,6 +28,9 @@ export const ULTIMATES = {
 
 export const BOMB = { damage: 50, radius: 4.5, speed: 17, gravity: 22 };
 
+// ゴッドタレットは運任せ。残りは失敗（チャージは消える）
+export const GOD_TURRET_ODDS = { drones: 0.3, rocket: 0.3 };
+
 export const HOSPITAL = { healPerSecond: 8, radius: 5 };
 
 // ロケットの爆発範囲はボムより小さい

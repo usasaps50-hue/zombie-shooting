@@ -27,6 +27,3 @@ export const TURRET = {
   range: 22,
   turnSpeed: 6,
 };
-
-// 通常ゾンビを倒したときの木のドロップ
-export const WOOD_DROP = { min: 4, max: 10 };
