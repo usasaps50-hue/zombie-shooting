@@ -88,26 +88,48 @@ export class Builder {
     this.ghost.traverse((o) => { if (o.isMesh) o.material.color.setHex(color); });
   }
 
+  count(typeId) {
+    return this.structures.filter((s) => s.def.id === typeId).length;
+  }
+
+  // 上限まで置いてあるときは、その種類の一番古いものを撤去して場所を空ける
+  enforceLimit(typeId) {
+    const { limit } = BUILDS[typeId];
+    if (!limit || this.count(typeId) < limit) return false;
+    const oldest = this.structures.find((s) => s.def.id === typeId);
+    this.remove(oldest);
+    return true;
+  }
+
+  remove(structure) {
+    const i = this.structures.indexOf(structure);
+    if (i < 0) return;
+    this.structures.splice(i, 1);
+    this.scene.remove(structure.root);
+    structure.dispose();
+  }
+
   place() {
     if (!this.canAfford()) return { ok: false, message: `${this.missingText()}が足りない` };
     if (!this.ghostValid) return { ok: false, message: 'ここには建てられない' };
 
+    const replaced = this.enforceLimit(this.typeId);
     const structure = createStructure(this.typeId, this.ghostPos, this.ghostYaw);
     this.scene.add(structure.root);
     structure.refreshBox();
     this.structures.push(structure);
 
     for (const [id, n] of Object.entries(this.def.cost)) this.materials[id] -= n;
-    return { ok: true, message: `${this.def.name}を建てた（${costText(this.typeId)}）` };
+    const suffix = replaced
+      ? `（上限${this.def.limit}個 — 古いものが消えた）`
+      : `（${costText(this.typeId)}）`;
+    return { ok: true, message: `${this.def.name}を建てた${suffix}` };
   }
 
   removeDead() {
     for (let i = this.structures.length - 1; i >= 0; i--) {
       const s = this.structures[i];
-      if (s.alive) continue;
-      this.scene.remove(s.root);
-      s.dispose();
-      this.structures.splice(i, 1);
+      if (!s.alive) this.remove(s);
     }
   }
 

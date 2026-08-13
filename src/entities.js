@@ -2,34 +2,7 @@ import * as THREE from 'three';
 import { Avatar } from './avatar.js';
 import { Zombie, ZOMBIE_HEIGHT } from './zombie.js';
 import { ENEMIES, JOBS } from './data/jobs.js';
-
-function makeLabel() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 64;
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
-  sprite.scale.set(1.4, 0.35, 1);
-  const draw = (text, color = '#ffffff') => {
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, 256, 64);
-    let size = 40;
-    do {
-      ctx.font = `bold ${size}px system-ui, sans-serif`;
-      size -= 2;
-    } while (ctx.measureText(text).width > 240 && size > 12);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineWidth = 8;
-    ctx.strokeStyle = 'rgba(0,0,0,.7)';
-    ctx.strokeText(text, 128, 32);
-    ctx.fillStyle = color;
-    ctx.fillText(text, 128, 32);
-    texture.needsUpdate = true;
-  };
-  return { sprite, draw };
-}
+import { makeLabel, hpColor } from './label.js';
 
 export class Teammate {
   constructor(scene, { name, color, position, jobId = 'soldier' }) {
@@ -101,7 +74,7 @@ export class Enemy {
 
     this.root = new THREE.Group();
     this.root.position.copy(position);
-    this.zombie = new Zombie(this.def.skin);
+    this.zombie = new Zombie(this.def.skin, this.def.armor);
     this.root.add(this.zombie.root);
 
     // アニメーションで動く見た目とは別に、当たり判定は固定のカプセルで取る
@@ -293,6 +266,6 @@ export class Enemy {
   }
 
   #refresh() {
-    this.label.draw(`${this.hp} / ${this.maxHp}`, this.hp > this.maxHp / 2 ? '#d8f0c0' : '#ffc0c0');
+    this.label.draw(`${this.hp} / ${this.maxHp}`, hpColor(this.hp, this.maxHp));
   }
 }

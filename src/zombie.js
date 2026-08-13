@@ -104,6 +104,12 @@ const SKINS = {
   blue: { face: '#5d8cb6', dark: '#2f5d7d', light: '#a6cbe4', hand: '#7fabce', foot: '#48708f' },
 };
 
+// 装甲の色。素の金属らしく見せたいのでテクスチャは貼らない
+const ARMORS = {
+  silver: { plate: 0xc3c9d1, trim: 0x8d949d },
+  gold: { plate: 0xd9b23f, trim: 0xa8842a },
+};
+
 // 同じ肌のテクスチャは1回だけ作って使い回す
 const skinCache = {};
 function skinTextures(id) {
@@ -131,8 +137,9 @@ function box(w, h, d, material) {
 }
 
 export class Zombie {
-  constructor(skinId = 'green') {
+  constructor(skinId = 'green', armorId = null) {
     const skin = skinTextures(skinId);
+    const armor = ARMORS[armorId];
     const skinned = (map) => new THREE.MeshStandardMaterial({ map, roughness: 0.95, transparent: true });
     this.mats = {
       sleeve: skinned(TEX.sleeve),
@@ -142,6 +149,14 @@ export class Zombie {
       face: skinned(skin.face),
       dark: new THREE.MeshStandardMaterial({ color: skin.dark, roughness: 1, transparent: true }),
     };
+    if (armor) {
+      // 環境マップがないシーンなので、metalness を上げすぎると真っ黒になる
+      const metal = (color, rough) =>
+        new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0.3, transparent: true });
+      this.mats.plate = metal(armor.plate, 0.3);
+      this.mats.trim = metal(armor.trim, 0.45);
+    }
+    this.armor = armor ? { plate: this.mats.plate, trim: this.mats.trim } : null;
     this.bodyMats = Object.values(this.mats);
 
     this.root = new THREE.Group();
@@ -171,6 +186,8 @@ export class Zombie {
     head.position.y = HEAD_H / 2;
     head.castShadow = true;
     this.neck.add(head);
+
+    if (this.armor) this.#buildArmor();
 
     this.armL = this.#buildArm(-1);
     this.armR = this.#buildArm(1);
@@ -205,7 +222,32 @@ export class Zombie {
     const cuff = box(ARM_W * 1.03, ARM_H * 0.18, ARM_D * 1.03, this.mats.cuff);
     cuff.position.y = -(ARM_H * 0.82) - (ARM_H * 0.18) / 2;
     pivot.add(main, cuff);
+
+    if (this.armor) {
+      // 肩当ては腕と一緒に振れるよう、腕のピボットにぶら下げる
+      const pauldron = box(ARM_W * 1.32, ARM_H * 0.26, ARM_D * 1.32, this.armor.plate);
+      pauldron.position.y = -ARM_H * 0.1;
+      const bracer = box(ARM_W * 1.14, ARM_H * 0.2, ARM_D * 1.14, this.armor.trim);
+      bracer.position.y = -ARM_H * 0.62;
+      pivot.add(pauldron, bracer);
+    }
     return pivot;
+  }
+
+  // 胸当て・ベルト・兜。肌と服の上から重ねる
+  #buildArmor() {
+    const chest = box(TORSO_W * 1.07, TORSO_H * 0.66, TORSO_D * 1.16, this.armor.plate);
+    chest.position.y = 0.16;
+    const belt = box(TORSO_W * 1.09, TORSO_H * 0.14, TORSO_D * 1.18, this.armor.trim);
+    belt.position.y = -0.5;
+    this.torso.add(chest, belt);
+
+    // 目より上だけを覆う。顔が隠れるとゾンビに見えなくなる
+    const helmet = box(HEAD_W * 1.1, HEAD_H * 0.42, HEAD_D * 1.1, this.armor.plate);
+    helmet.position.y = HEAD_H - (HEAD_H * 0.42) / 2;
+    const crest = box(HEAD_W * 0.13, HEAD_H * 0.2, HEAD_D * 1.14, this.armor.trim);
+    crest.position.y = HEAD_H + HEAD_H * 0.06;
+    this.neck.add(helmet, crest);
   }
 
   #buildGrave() {

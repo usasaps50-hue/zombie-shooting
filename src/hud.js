@@ -4,7 +4,7 @@ import { PLAYER } from './data/jobs.js';
 import { IS_TOUCH } from './device.js';
 
 const CYCLE_HINT = IS_TOUCH ? '「切替」で変更' : 'R で切替';
-const ULT_HINT = IS_TOUCH ? '「必殺」' : 'Q';
+const ULT_READY = IS_TOUCH ? '準備OK' : 'Q で発動';
 
 export class Hud {
   constructor() {
@@ -109,8 +109,8 @@ export class Hud {
     const percent = Math.floor(ult.value * 100);
     this.ultFill.style.width = `${percent}%`;
     this.ultText.textContent = ult.ready
-      ? `必殺 ${ult.def.name}（${ULT_HINT}）`
-      : `必殺 ${ult.def.name} ${percent}%`;
+      ? `${ult.def.name}　${ULT_READY}`
+      : `${ult.def.name}　${percent}%`;
     this.ultBar.classList.toggle('ready', ult.ready);
     this.ultBtn.classList.toggle('ready', ult.ready);
     this.ultBtn.style.setProperty('--charge', ult.value);
@@ -129,7 +129,10 @@ export class Hud {
     const cost = Object.entries(builder.def.cost)
       .map(([id, n]) => `${MATERIALS[id].name}${n}`)
       .join('＋');
-    this.buildInfo.textContent = `${builder.def.name}（${cost}）　${CYCLE_HINT}`;
+    // 上限まで置いてあると、次に建てたとき古いものが消えることを示す
+    const placed = builder.count(builder.def.id);
+    const limit = builder.def.limit ? `　${placed}/${builder.def.limit}` : '';
+    this.buildInfo.textContent = `${builder.def.name}（${cost}）${limit}　${CYCLE_HINT}`;
     this.buildInfo.classList.toggle('short', !builder.canAfford());
   }
 }

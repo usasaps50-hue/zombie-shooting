@@ -102,10 +102,13 @@ export class Projectiles {
 class Drone {
   constructor(scene, index) {
     this.hp = DRONE.hp;
-    this.phase = (index / DRONE.count) * Math.PI * 2;
+    // 1回ぶんの3機で円を三等分し、次に呼んだ3機はその隙間に入る
+    const batch = Math.floor(index / DRONE.count);
+    const slot = index % DRONE.count;
+    this.phase = (slot * 2 + batch) * (Math.PI / DRONE.count);
     this.time = 0;
-    // 3機が同時に撃たないよう、撃ち始めをずらす
-    this.readyAt = (index / DRONE.count) * DRONE.interval;
+    // 同時に撃たないよう、撃ち始めをずらす
+    this.readyAt = (index % DRONE.count) * (DRONE.interval / DRONE.count);
 
     this.root = new THREE.Group();
     const body = new THREE.Mesh(
@@ -179,16 +182,18 @@ export class Drones {
   constructor(scene) {
     this.scene = scene;
     this.list = [];
+    this.spawned = 0;
   }
 
   get count() {
     return this.list.length;
   }
 
+  // 呼ぶたびに増える。上限を超えたぶんは、古い機から順に消える
   spawn(position) {
-    this.clear();
     for (let i = 0; i < DRONE.count; i++) {
-      const drone = new Drone(this.scene, i);
+      if (this.list.length >= DRONE.max) this.list.shift().dispose(this.scene);
+      const drone = new Drone(this.scene, this.spawned++);
       drone.root.position.set(position.x, DRONE.height, position.z);
       this.list.push(drone);
     }
@@ -219,5 +224,6 @@ export class Drones {
   clear() {
     for (const drone of this.list) drone.dispose(this.scene);
     this.list.length = 0;
+    this.spawned = 0;
   }
 }

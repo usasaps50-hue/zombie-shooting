@@ -34,11 +34,15 @@ export const HOSPITAL = { healPerSecond: 8, radius: 5 };
 export const GOD_TURRET = { damage: 30, radius: 2.4, interval: 5, range: 26, speed: 22, turnSpeed: 3 };
 
 export const DRONE = {
+  // 1回の必殺技で count 機ずつ増え、max を超えると古い機から消える
   count: 3,
+  max: 6,
+  hp: 20,
   damage: 10,
   interval: 0.5,
   range: 18,
-  height: 3.4,
-  orbitRadius: 2.8,
+  // スマホの横画面は縦の視野が狭い。見上げなくても入るよう、低めを広く回らせる
+  height: 2.3,
+  orbitRadius: 4.0,
   orbitSpeed: 0.7,
 };

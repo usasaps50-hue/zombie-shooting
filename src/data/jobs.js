@@ -48,6 +48,7 @@ const NORMAL_ZOMBIE = {
   id: 'normal',
   name: '通常ゾンビ',
   skin: 'green',
+  armor: null,
   hp: 75,
   sight: 14,
   walkSpeed: 1.1,
@@ -66,5 +67,20 @@ export const ENEMIES = {
     name: '青ゾンビ',
     skin: 'blue',
     sight: NORMAL_ZOMBIE.sight * 1.8,
+  },
+  // 装甲を着たゾンビ。装甲のぶんHPが上がる
+  silver: {
+    ...NORMAL_ZOMBIE,
+    id: 'silver',
+    name: '銀の装甲ゾンビ',
+    armor: 'silver',
+    hp: NORMAL_ZOMBIE.hp + 50,
+  },
+  gold: {
+    ...NORMAL_ZOMBIE,
+    id: 'gold',
+    name: '金の装甲ゾンビ',
+    armor: 'gold',
+    hp: NORMAL_ZOMBIE.hp + 100,
   },
 };

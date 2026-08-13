@@ -62,6 +62,8 @@ const enemies = [
   // 青ゾンビは索敵範囲が広いので、遠くに置いても寄ってくる
   new Enemy(scene, new THREE.Vector3(-22, 0, -34), 'blue'),
   new Enemy(scene, new THREE.Vector3(20, 0, -36), 'blue'),
+  new Enemy(scene, new THREE.Vector3(-6, 0, -30), 'silver'),
+  new Enemy(scene, new THREE.Vector3(8, 0, -32), 'gold'),
 ];
 
 const builder = new Builder(scene, colliders, {});
@@ -84,7 +86,7 @@ function startGame(loadout) {
   const player = new Player(job);
   const weapons = new Weapons(loadout.items, onWeaponEvent);
 
-  game = { player, weapons, loadout, job, hold: 0, holdAction: null, ult: new UltimateCharge(job.id), godTurret: null };
+  game = { player, weapons, loadout, job, hold: 0, holdAction: null, ult: new UltimateCharge(job.id) };
   input.reset();
   builder.clear();
   projectiles.clear();
@@ -264,6 +266,7 @@ function placeUltStructure(typeId, distance) {
     hud.setToast('ここには置けない — 開けた場所で使おう', 1.8);
     return null;
   }
+  builder.enforceLimit(typeId);
   builder.structures.push(structure);
   return structure;
 }
@@ -289,9 +292,8 @@ const ULT_ACTIONS = {
   architect: () => {
     const turret = placeUltStructure('godturret', 4.0);
     if (!turret) return false;
-    game.godTurret = turret;
     drones.spawn(game.player.position);
-    hud.setToast(`${ULTIMATES.architect.name}！ ドローン${DRONE.count}機が援護する`, 2.4);
+    hud.setToast(`${ULTIMATES.architect.name}！ ドローン${drones.count}機が援護する（最大${DRONE.max}機）`, 2.4);
     return true;
   },
 };
@@ -438,11 +440,10 @@ function frame() {
   }
   projectiles.update(dt, enemies, (center, radius, damage) => explode(center, radius, damage, now));
 
-  // ゴッドタレットが壊されたら、呼び出したドローンも引き上げる
-  if (game?.godTurret && !game.godTurret.alive) {
-    game.godTurret = null;
+  // ゴッドタレットが全部壊されたら、呼び出したドローンも引き上げる
+  if (drones.count && !builder.structures.some((s) => s.def.kind === 'godturret' && s.alive)) {
     drones.clear();
-    hud.setToast('ゴッドタレットが壊された', 1.6);
+    hud.setToast('ゴッドタレットが壊された — ドローンが引き上げた', 1.8);
   }
 
   builder.removeDead();

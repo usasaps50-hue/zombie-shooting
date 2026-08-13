@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { BUILDS, MATERIALS, WALL_SIZE, TURRET } from './data/builds.js';
 import { GOD_TURRET, HOSPITAL } from './data/ultimates.js';
+import { makeLabel, hpColor } from './label.js';
 
 const PAD = 0.02;
 
@@ -48,10 +49,21 @@ export class Structure {
     this.root = new THREE.Group();
     this.root.position.copy(position);
     this.box = new THREE.Box3();
+
+    // 当たり判定は solid だけから取る。HPの文字までは含めない
+    this.solid = new THREE.Group();
+    this.label = makeLabel(1.6);
+    this.root.add(this.solid, this.label.sprite);
+    this.#refreshLabel();
   }
 
   get alive() {
     return this.hp > 0;
+  }
+
+  // 建物の高さに合わせて、HPの文字を頭の上に出す
+  setLabelHeight(y) {
+    this.label.sprite.position.y = y;
   }
 
   damage(amount) {
@@ -68,18 +80,29 @@ export class Structure {
     return this.hp - before;
   }
 
-  #showWear() {
-    const wear = this.hp / this.maxHp;
-    this.root.traverse((o) => {
-      if (o.isMesh && o.material.color) o.material.color.setScalar(0.4 + wear * 0.6);
-    });
+  #refreshLabel() {
+    this.label.draw(`${Math.ceil(this.hp)} / ${this.maxHp}`, hpColor(this.hp, this.maxHp));
   }
 
+  // 傷むほど暗くする。元の色を覚えておかないと、金色などが灰色になってしまう
+  #showWear() {
+    const shade = 0.4 + (this.hp / this.maxHp) * 0.6;
+    this.solid.traverse((o) => {
+      if (!o.isMesh || !o.material.color) return;
+      o.material.userData.baseColor ??= o.material.color.clone();
+      o.material.color.copy(o.material.userData.baseColor).multiplyScalar(shade);
+    });
+    this.#refreshLabel();
+  }
+
+  // setFromObject は親をたどってくれないので、先に root から行列を作り直す
   refreshBox() {
-    this.box.setFromObject(this.root);
+    this.root.updateMatrixWorld(true);
+    this.box.setFromObject(this.solid);
   }
 
   dispose() {
+    this.label.dispose();
     this.root.traverse((o) => {
       if (!o.isMesh) return;
       o.geometry.dispose();
@@ -100,7 +123,8 @@ export class Wall extends Structure {
     mesh.position.y = height / 2;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    this.root.add(mesh);
+    this.solid.add(mesh);
+    this.setLabelHeight(height + 0.35);
     this.refreshBox();
   }
 }
@@ -128,8 +152,9 @@ export class Turret extends Structure {
     scope.position.set(0, 0.26, -0.05);
     this.head.add(body, barrel, scope);
 
-    this.root.add(base, post, this.head);
-    this.root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    this.solid.add(base, post, this.head);
+    this.solid.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    this.setLabelHeight(1.6);
 
     this.ammo = TURRET.magazine;
     this.readyAt = 0;
@@ -218,16 +243,12 @@ export class Hospital extends Structure {
     aura.rotation.x = -Math.PI / 2;
     aura.position.y = 0.03;
 
-    this.building = new THREE.Group();
-    this.building.add(walls, roof, door, crossV, crossH);
-    this.building.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    this.root.add(this.building, aura);
+    // 回復範囲の輪を solid に入れると、ゾンビが遠くから殴り始めてしまう
+    this.solid.add(walls, roof, door, crossV, crossH);
+    this.solid.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    this.root.add(aura);
+    this.setLabelHeight(h + 0.6);
     this.refreshBox();
-  }
-
-  // 回復範囲の輪まで当たり判定にすると、ゾンビが遠くから殴り始めてしまう
-  refreshBox() {
-    this.box.setFromObject(this.building);
   }
 }
 
@@ -256,8 +277,9 @@ export class RocketTurret extends Structure {
     };
     this.head.add(body, tube(-0.2), tube(0.2));
 
-    this.root.add(base, post, this.head);
-    this.root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    this.solid.add(base, post, this.head);
+    this.solid.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    this.setLabelHeight(1.95);
 
     this.time = 0;
     this.readyAt = 1.0;
