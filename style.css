@@ -27,14 +27,16 @@ canvas { display: block; position: fixed; inset: 0; }
 /* ---------- 画面（ロビー・ポーズ） ---------- */
 .screen {
   position: fixed; inset: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: center;
+  /* 中身が画面より高いとき、center だと上が切れてスクロールできない。
+     flex-start ＋ パネル側の margin:auto なら、収まるときだけ中央に来る */
+  display: flex; align-items: flex-start; justify-content: center;
   background: rgba(9, 12, 17, .9); overflow-y: auto;
   padding: calc(16px + var(--safe-t)) calc(16px + var(--safe-r)) calc(16px + var(--safe-b)) calc(16px + var(--safe-l));
 }
 /* 縦向き警告とエラーは、ロビーやポーズより手前に出す */
 #rotate, #nogl { z-index: 40; background: #0d1015; }
 .panel {
-  width: min(560px, 100%); background: #161b23; border: 1px solid #2a323d;
+  width: min(560px, 100%); margin: auto; background: #161b23; border: 1px solid #2a323d;
   border-radius: 12px; padding: 22px; display: flex; flex-direction: column; gap: 18px;
 }
 .panel.small { gap: 14px; text-align: center; }
@@ -113,7 +115,8 @@ button.ghost { background: transparent; border: 1px solid #2a323d; color: #b6c0c
 #ult-fill { height: 100%; width: 0; background: linear-gradient(90deg, #8a6f3a, #e8c46a); transition: width .15s; }
 .tag { background: #4d7ea8; border-radius: 4px; padding: 1px 6px; margin-left: 8px; font-size: 11px; }
 
-#ammo { position: absolute; right: 22px; bottom: 70px; font-size: 30px; font-weight: 700; text-shadow: 0 2px 4px #000; font-variant-numeric: tabular-nums; }
+/* アイテム欄が武器の絵ぶん高くなったので、弾数はその上に逃がす */
+#ammo { position: absolute; right: 22px; bottom: 106px; font-size: 30px; font-weight: 700; text-shadow: 0 2px 4px #000; font-variant-numeric: tabular-nums; }
 
 #slots { position: absolute; right: 18px; bottom: 18px; list-style: none; display: flex; gap: 6px; }
 #slots li {
@@ -122,6 +125,9 @@ button.ghost { background: transparent; border: 1px solid #2a323d; color: #b6c0c
 }
 #slots li.on { border-color: #6fa8dc; color: #fff; background: rgba(30, 52, 70, .85); }
 #slots li .key { display: block; font-size: 10px; color: #6d7783; }
+/* 絵文字ではなく、実際の武器モデルを描いた画像 */
+.slot-icon { display: block; width: 34px; height: 34px; margin: 2px auto 0; object-fit: contain; }
+.slot-name { display: block; margin-top: 2px; }
 
 #materials {
   position: absolute; left: 18px; bottom: 96px;
@@ -209,7 +215,49 @@ body.touch #touch-ui { display: block; }
   background: rgba(12, 16, 22, .6); color: #aab4bf;
 }
 .tbtn.slot .ic { font-size: 14px; }
+.tbtn.slot .slot-icon { width: 26px; height: 26px; margin: 0; }
 .tbtn.slot.on { background: rgba(30, 52, 70, .9); border-color: #6fa8dc; color: #fff; }
+
+/* 待機場では、体力・弾・素材・戦闘用のボタンは出さない */
+body.hub #vitals,
+body.hub #ammo,
+body.hub #slots,
+body.hub #materials,
+body.hub #build-info,
+body.hub #crosshair,
+body.hub #touch-slots,
+body.hub #btn-fire,
+body.hub #btn-reload,
+body.hub #btn-ult { display: none; }
+/* 待機場では「待機場に戻る」は出さない */
+body.hub #btn-tohub { display: none; }
+body.hub #touch-buttons { grid-template-areas: "use" "jump"; }
+body.hub .hold-bar { display: none; }
+
+/* お店の画面 */
+.shop-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.shop-head h2 { margin: 0; }
+#shop .panel { max-width: 560px; }
+/* 店の品物は横並びだと文字が潰れるので、1行ずつ縦に並べる */
+#shop-list { margin: 14px 0 16px; grid-template-columns: 1fr; }
+.shop-card { display: flex; align-items: center; gap: 12px; text-align: left; }
+.shop-icon { width: 46px; height: 46px; flex: 0 0 46px; object-fit: contain; }
+.shop-emoji {
+  width: 46px; height: 46px; flex: 0 0 46px; font-size: 26px;
+  display: flex; align-items: center; justify-content: center;
+  background: #10161d; border-radius: 8px; color: #cbb894;
+}
+.shop-text { flex: 1; min-width: 0; }
+.shop-card .name { display: block; }
+.shop-card .stat { margin-top: 4px; }
+.shop-action { font-size: 11px; color: #6fa8dc; white-space: nowrap; }
+.card.on .shop-action { color: #fff; }
+.wip {
+  background: #16202a; border: 1px dashed #4a5765; border-radius: 10px;
+  padding: 18px; text-align: center; color: #9aa6b3; font-size: 12px; line-height: 1.8;
+}
+.wip-title { font-size: 16px; font-weight: 700; color: #e8c46a; margin-bottom: 8px; }
+.wip p { margin: 4px 0; }
 
 body.touch #vitals { top: calc(12px + var(--safe-t)); left: calc(16px + var(--safe-l)); bottom: auto; width: 150px; }
 body.touch #ammo { top: calc(10px + var(--safe-t)); right: calc(66px + var(--safe-r)); bottom: auto; font-size: 24px; }
@@ -229,4 +277,10 @@ body.touch #build-info { bottom: calc(62px + var(--safe-b)); font-size: 12px; }
   .tbtn.mid { width: 64px; height: 64px; font-size: 14px; }
   .tbtn.ult { font-size: 12px; }
   .tbtn.slot { height: 34px; min-width: 66px; font-size: 11px; }
+  .tbtn.slot .slot-icon { width: 22px; height: 22px; }
+  /* 背が低い画面では、店のパネルも一回り詰める */
+  .panel { padding: 14px; gap: 10px; }
+  #shop-list { margin: 8px 0 10px; gap: 6px; }
+  .shop-card { padding: 8px; gap: 10px; }
+  .shop-icon, .shop-emoji { width: 34px; height: 34px; flex-basis: 34px; }
 }

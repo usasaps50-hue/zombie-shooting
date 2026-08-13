@@ -29,6 +29,31 @@ export class Hud {
     this.hurt = document.getElementById('hurt');
     this.toastTimer = 0;
     this.slotIds = [];
+    this.icons = {};
+  }
+
+  // 絵文字ではなく、実際の武器モデルを描いた画像を使う
+  setIcons(icons) {
+    this.icons = icons;
+  }
+
+  #iconHtml(id, cls) {
+    return this.icons[id]
+      ? `<img class="${cls}" src="${this.icons[id]}" alt="">`
+      : `<span class="${cls}">${ITEMS[id].icon}</span>`;
+  }
+
+  // 待機場では体力や弾ではなく、話しかけられる相手だけ出す
+  updateHub(dt, promptText) {
+    this.prompt.classList.toggle('hidden', !promptText);
+    if (promptText) {
+      this.promptText.textContent = promptText;
+      this.holdFill.style.width = '100%';
+    }
+    if (this.toastTimer > 0) {
+      this.toastTimer -= dt;
+      if (this.toastTimer <= 0) this.toast.classList.add('hidden');
+    }
   }
 
   show() { this.el.classList.remove('hidden'); }
@@ -39,14 +64,14 @@ export class Hud {
     this.slots.innerHTML = '';
     itemIds.forEach((id, i) => {
       const li = document.createElement('li');
-      li.innerHTML = `<span class="key">${i + 1}</span>${ITEMS[id].icon} ${ITEMS[id].name}`;
+      li.innerHTML = `<span class="key">${i + 1}</span>${this.#iconHtml(id, 'slot-icon')}<span class="slot-name">${ITEMS[id].name}</span>`;
       this.slots.appendChild(li);
     });
     // スマホは番号だけだと何を持つか分からないので、アイコンと名前を出す
     this.touchSlots.forEach((btn, i) => {
-      const item = ITEMS[itemIds[i]];
-      btn.classList.toggle('hidden', !item);
-      if (item) btn.innerHTML = `<span class="ic">${item.icon}</span>${item.name}`;
+      const id = itemIds[i];
+      btn.classList.toggle('hidden', !id);
+      if (id) btn.innerHTML = `${this.#iconHtml(id, 'slot-icon')}${ITEMS[id].name}`;
     });
   }
 
@@ -69,13 +94,8 @@ export class Hud {
 
     const item = weapons.current;
     const st = weapons.currentState;
-    if (item?.kind === 'gun') {
-      this.ammo.textContent = `${st.ammo} / ${item.magazine}`;
-    } else if (item) {
-      this.ammo.textContent = item.icon;
-    } else {
-      this.ammo.textContent = '';
-    }
+    // 弾数は銃のときだけ。それ以外は下のアイテム欄を見れば分かる
+    this.ammo.textContent = item?.kind === 'gun' ? `${st.ammo} / ${item.magazine}` : '';
 
     [...this.slots.children].forEach((li, i) => li.classList.toggle('on', i === weapons.index));
     this.touchSlots.forEach((btn, i) => btn.classList.toggle('on', i === weapons.index));

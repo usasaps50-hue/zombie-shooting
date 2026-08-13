@@ -6,6 +6,9 @@ import { Weapons } from './weapons.js';
 import { ViewModel } from './viewmodel.js';
 import { Hud } from './hud.js';
 import { Lobby } from './lobby.js';
+import { createHub, TALK_RANGE } from './hub.js';
+import { Shop, syncJobItems } from './shop.js';
+import { makeItemIcons } from './itemicon.js';
 import { Teammate, Enemy } from './entities.js';
 import { Effects } from './effects.js';
 import { Builder } from './build.js';
@@ -81,10 +84,49 @@ scene.add(muzzle);
 const SHOVEL_KNOCKBACK = 4.0;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
+// HUDと店で使う武器アイコン。実際の3Dモデルを描いた画像
+const ITEM_ICONS = makeItemIcons(['pistol', 'shovel', 'hammer', 'bandage']);
+hud.setIcons(ITEM_ICONS);
+
+const hub = createHub();
+
 let game = null;
 let paused = false;
+// 'lobby'（合言葉の画面）／'hub'（待機場）／'battle'
+let place = 'lobby';
+let hubPlayer = null;
+let hubTime = 0;
+let usePressed = false;
+let loadout = { passphrase: 'ひとり', jobId: 'soldier', items: ['pistol', 'shovel'] };
 
-const lobby = new Lobby(startGame);
+const shop = new Shop(ITEM_ICONS, () => hud.setToast('そうびを変えた', 1.2));
+const lobby = new Lobby(enterHub);
+
+// 待機場へ。カメラを待機場のシーンに移して歩けるようにする
+function enterHub(next) {
+  if (next) {
+    loadout = { ...next, items: [...next.items] };
+    syncJobItems(loadout);
+  }
+  game = null;
+  paused = false;
+  place = 'hub';
+  hubTime = 0;
+  hubPlayer = new Player(JOBS[loadout.jobId]);
+  hubPlayer.position.set(hub.spawn.x, EYE_HEIGHT, hub.spawn.z);
+  // 広場とバトルゲートのほう（-Z）を向いて始める
+  hubPlayer.yaw = 0;
+  hub.scene.add(camera);
+  viewModel.setItem(null);
+  input.reset();
+  shop.close();
+  document.body.classList.add('hub');
+  pauseEl.classList.add('hidden');
+  hud.show();
+  hud.setToast('待機場へようこそ。お店で装備をえらんで、奥のゲートからバトルへ', 4);
+  if (IS_TOUCH) goLandscapeFullscreen();
+  input.requestLock();
+}
 
 function startGame(loadout) {
   const job = JOBS[loadout.jobId];
@@ -92,6 +134,10 @@ function startGame(loadout) {
   const weapons = new Weapons(loadout.items, onWeaponEvent);
 
   game = { player, weapons, loadout, job, hold: 0, holdAction: null, ult: new UltimateCharge(job.id) };
+  place = 'battle';
+  hubPlayer = null;
+  scene.add(camera);
+  document.body.classList.remove('hub');
   input.reset();
   builder.clear();
   projectiles.clear();
@@ -104,7 +150,7 @@ function startGame(loadout) {
   hud.buildSlots(loadout.items);
   hud.show();
   viewModel.setItem(weapons.current?.id ?? null);
-  hud.setToast(`合言葉「${loadout.passphrase}」の部屋を開始しました`, 2.5);
+  hud.setToast(`バトル開始！ 合言葉「${loadout.passphrase}」`, 2.5);
   if (IS_TOUCH) goLandscapeFullscreen();
   resume();
 }
@@ -136,8 +182,13 @@ function pause() {
 function toLobby() {
   game = null;
   paused = false;
+  place = 'lobby';
+  hubPlayer = null;
   projectiles.clear();
   drones.clear();
+  scene.add(camera);
+  document.body.classList.remove('hub');
+  shop.close();
   pauseEl.classList.add('hidden');
   hud.hide();
   viewModel.setItem(null);
@@ -148,19 +199,31 @@ function toLobby() {
 
 document.getElementById('btn-resume').addEventListener('click', resume);
 document.getElementById('btn-tolobby').addEventListener('click', toLobby);
+document.getElementById('btn-tohub').addEventListener('click', () => {
+  projectiles.clear();
+  drones.clear();
+  builder.clear();
+  playerBody.setVisible(false);
+  enterHub();
+});
+const playing = () => place !== 'lobby' && !paused && !shop.open;
+
 document.getElementById('btn-pause').addEventListener('click', () => {
-  if (game) paused ? resume() : pause();
+  if (place !== 'lobby') paused ? resume() : pause();
 });
 canvas.addEventListener('click', () => {
-  if (game && !paused) input.requestLock();
+  if (playing()) input.requestLock();
 });
 addEventListener('keydown', (e) => {
-  if (!game) return;
-  if (e.code === 'Escape') paused ? resume() : pause();
-  if (e.code === 'KeyG' && !paused) applyDamage(25);
+  if (place === 'lobby') return;
+  if (e.code === 'Escape') {
+    if (shop.open) shop.close();
+    else paused ? resume() : pause();
+  }
+  if (e.code === 'KeyG' && game && !paused) applyDamage(25);
 });
 document.addEventListener('pointerlockchange', () => {
-  if (game && !paused && !input.locked && !input.isTouch) pause();
+  if (playing() && !input.locked && !input.isTouch) pause();
 });
 
 function onWeaponEvent(ev) {
@@ -473,12 +536,67 @@ function holdAction(dt, key, duration, text, onDone) {
   return { text, progress: game.hold / duration };
 }
 
+// 話しかけられる相手が近くにいるか
+function nearestZone() {
+  let best = null;
+  let bestDist = TALK_RANGE;
+  for (const zone of hub.zones) {
+    const dist = Math.hypot(hubPlayer.position.x - zone.position.x, hubPlayer.position.z - zone.position.z);
+    if (dist < bestDist) {
+      best = zone;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+function enterZone(zone) {
+  if (zone.id === 'battle') {
+    startGame(loadout);
+    return;
+  }
+  shop.show(zone.id, loadout);
+  input.reset();
+  input.releaseLock();
+}
+
+function updateHub(dt) {
+  hubTime += dt;
+  // 店員はずっと手を振っている
+  for (const npc of hub.npcs) {
+    npc.avatar.update(dt, { anim: { name: 'wave', t: hubTime }, speed: 0, pitch: 0 });
+  }
+
+  if (shop.open || paused) {
+    hud.updateHub(dt, '');
+    usePressed = false;
+    return;
+  }
+
+  hubPlayer.update(dt, input, hub.colliders);
+  hubPlayer.applyToCamera(camera);
+
+  const zone = nearestZone();
+  // 押しっぱなしで開き直さないよう、押した瞬間だけ拾う
+  if (zone && input.use && !usePressed) enterZone(zone);
+  usePressed = input.use;
+
+  const hint = input.isTouch ? '使' : 'E';
+  hud.updateHub(dt, zone ? `${zone.label}（${hint}）` : '');
+}
+
 const clock = new THREE.Clock();
 
 function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.1);
   const now = performance.now() / 1000;
+
+  if (place === 'hub') {
+    updateHub(dt);
+    renderer.render(hub.scene, camera);
+    return;
+  }
 
   muzzle.intensity = Math.max(0, muzzle.intensity - dt * 90);
 

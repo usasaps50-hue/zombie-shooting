@@ -24,22 +24,12 @@
       </div>
 
       <div class="row">
-        <label>職業</label>
-        <div id="jobs" class="cards"></div>
-      </div>
-
-      <div class="row">
-        <label>アイテム <span id="slot-count" class="count">0 / 3</span></label>
-        <div id="items" class="cards"></div>
-        <p id="job-extra" class="hint"></p>
-      </div>
-
-      <div class="row">
         <label>参加メンバー</label>
         <ul id="members" class="members"></ul>
+        <p class="hint">職業とアイテムは、待機場のお店で選びます。</p>
       </div>
 
-      <button id="btn-start" class="primary" type="button">ホストとして開始</button>
+      <button id="btn-start" class="primary" type="button">待機場に入る</button>
     </div>
   </section>
 
@@ -86,13 +76,28 @@
     </div>
   </div>
 
+  <!-- 待機場のお店 -->
+  <section id="shop" class="screen hidden">
+    <div class="panel">
+      <div class="shop-head">
+        <h2 id="shop-title">お店</h2>
+        <span id="shop-keeper" class="count"></span>
+      </div>
+      <p id="shop-note" class="hint"></p>
+      <div id="shop-list" class="cards"></div>
+      <button id="shop-close" class="primary" type="button">話を終える</button>
+    </div>
+  </section>
+
   <!-- ポーズ -->
   <section id="pause" class="screen hidden">
     <div class="panel small">
       <h2>ポーズ</h2>
-      <p class="hint">W A S D 移動 ／ マウス 視点 ／ 左クリック 攻撃 ／ R リロード・切替 ／ Q 必殺技 ／ 1-3 アイテム ／ E 使う・蘇生 ／ Space ジャンプ</p>
+      <p class="hint">W A S D 移動 ／ マウス 視点 ／ 左クリック 攻撃 ／ R リロード・切替 ／ Q 必殺技 ／ 1-3 アイテム ／ E 使う・蘇生・話しかける ／ Space ジャンプ</p>
       <p class="hint">スマホ：左スティック 移動（外まで倒すとダッシュ）／ 画面をなぞる 視点 ／ 右下の大きいボタン ジャンプ、そのすぐ上が攻撃 ／ 使う・R・必殺</p>
+      <p class="hint">待機場では、お店の人に近づいて E（スマホは「使」）で話しかけます。奥のゲートでバトルへ。</p>
       <button id="btn-resume" class="primary" type="button">再開</button>
+      <button id="btn-tohub" class="ghost" type="button">待機場に戻る</button>
       <button id="btn-tolobby" class="ghost" type="button">ロビーに戻る</button>
     </div>
   </section>

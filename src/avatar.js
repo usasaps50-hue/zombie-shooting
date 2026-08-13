@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createItemMesh } from './viewmodel.js';
+import { canvasTexture, paint } from './textures.js';
 
 const smooth = (t) => t * t * (3 - 2 * t);
 const phase = (t, a, b) => THREE.MathUtils.clamp((t - a) / (b - a), 0, 1);
@@ -10,6 +11,46 @@ const ARM_LEN = 0.5;
 // アイテムを構えたときの右腕の基本角度。hand をこの逆に回すと、
 // 手のローカル軸がワールド軸と揃うのでアイテムの向きを素直に指定できる。
 const HOLD_ARM_X = { gun: -1.45, shovel: -0.5 };
+
+// 顔。目と口を描いたテクスチャを頭の前面（+Z）だけに貼る
+function faceTexture(skin) {
+  const { canvas, ctx, size } = paint();
+  ctx.fillStyle = `#${new THREE.Color(skin).getHexString()}`;
+  ctx.fillRect(0, 0, size, size);
+
+  const eye = (x) => {
+    ctx.fillStyle = '#f7f4ef';
+    ctx.beginPath();
+    ctx.ellipse(x, 56, 13, 15, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#22262c';
+    ctx.beginPath();
+    ctx.ellipse(x + 1, 58, 6, 7.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // 目のハイライト。これがあると生きている感じが出る
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(x + 3.5, 54, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  eye(44);
+  eye(84);
+
+  ctx.strokeStyle = '#5b4636';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(64, 88, 14, Math.PI * 0.15, Math.PI * 0.85);
+  ctx.stroke();
+
+  return canvasTexture(canvas);
+}
+
+const FACE_CACHE = {};
+function faceMaterial(skin) {
+  FACE_CACHE[skin] ??= faceTexture(skin);
+  return new THREE.MeshStandardMaterial({ map: FACE_CACHE[skin], roughness: 0.9 });
+}
 
 function limb(len, thickness, color) {
   const pivot = new THREE.Object3D();
@@ -88,9 +129,11 @@ export class Avatar {
     torso.position.y = 1.15;
     torso.castShadow = true;
 
+    // 顔は +Z 面（インデックス4）だけ差し替える
+    const plain = () => new THREE.MeshStandardMaterial({ color: skin, roughness: 0.9 });
     const head = new THREE.Mesh(
       new THREE.BoxGeometry(0.28, 0.3, 0.28),
-      new THREE.MeshStandardMaterial({ color: skin, roughness: 0.9 })
+      [plain(), plain(), plain(), plain(), faceMaterial(skin), plain()]
     );
     head.position.y = 1.65;
     head.castShadow = true;
@@ -114,7 +157,10 @@ export class Avatar {
 
     // 被弾したときに赤く光らせる。アイテムや帽子は後から足すので含まれない
     this.skinMaterials = [];
-    body.traverse((o) => { if (o.isMesh) this.skinMaterials.push(o.material); });
+    body.traverse((o) => {
+      // 顔だけマテリアルが配列になっているので、ばらして集める
+      if (o.isMesh) this.skinMaterials.push(...[o.material].flat());
+    });
     this.flash = 0;
   }
 
@@ -208,6 +254,13 @@ export class Avatar {
       this.body.rotation.y = THREE.MathUtils.lerp(0.95, -0.75, swing);
     } else if (name === 'swap') {
       armR += (1 - smooth(t)) * 1.0;
+    } else if (name === 'wave') {
+      // 右手を上げて、ひじから先を左右に振る。店員はずっとこれ
+      armR = -2.7;
+      armRz = -0.5 + Math.sin(t * Math.PI * 2) * 0.45;
+      armL = 0;
+      armLz = 0;
+      this.body.rotation.y = Math.sin(t * Math.PI) * 0.08;
     } else if (name === 'hurt') {
       // 一瞬のけぞって、両腕で頭をかばう
       const recoil = t < 0.25 ? smooth(t / 0.25) : 1 - smooth((t - 0.25) / 0.75);
@@ -219,7 +272,9 @@ export class Avatar {
       this.body.position.z = -recoil * 0.14;
     }
 
-    if (name !== 'swing') this.body.rotation.y = THREE.MathUtils.lerp(this.body.rotation.y, 0, dt * 10);
+    if (name !== 'swing' && name !== 'wave') {
+      this.body.rotation.y = THREE.MathUtils.lerp(this.body.rotation.y, 0, dt * 10);
+    }
 
     this.armR.rotation.x = THREE.MathUtils.lerp(this.armR.rotation.x, armR, dt * 16);
     this.armL.rotation.x = THREE.MathUtils.lerp(this.armL.rotation.x, armL, dt * 16);
