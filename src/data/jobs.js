@@ -130,9 +130,9 @@ function armored(base, armorId, id, name) {
   };
 }
 
-// 落とすコインは硬さに比例させる。通常ゾンビ15枚、ミュータント60枚
+// 落とすコインは硬さに比例させる。通常ゾンビ1枚、ミュータント5枚
 function withCoins(def) {
-  return { ...def, coins: Math.round(def.hp / 5) };
+  return { ...def, coins: Math.max(1, Math.round(def.hp / 60)) };
 }
 
 export const ENEMIES = Object.fromEntries(Object.entries({
