@@ -10,6 +10,8 @@ import { createHub, TALK_RANGE } from './hub.js';
 import { Shop, syncJobItems, randomPass } from './shop.js';
 import { makeItemIcons } from './itemicon.js';
 import { upgradedItem, MAX_LEVEL, ROLLING_SMASH } from './data/upgrades.js';
+import { Waves } from './waves.js';
+import { WAVE } from './data/waves.js';
 import { progress, levelOf, addCoins } from './progress.js';
 import { Teammate, Enemy } from './entities.js';
 import { Effects } from './effects.js';
@@ -60,23 +62,20 @@ teammates[1].setDowned(true);
 const playerBody = new Teammate(scene, { name: 'あなた', color: 0x5f7f9f, jobId: 'soldier', position: new THREE.Vector3() });
 playerBody.setVisible(false);
 
-// ゾンビは4方向のトンネルから出てくる。倒しても同じトンネルに戻って出直す
-const ENEMY_LINEUP = [
-  'normal', 'normal', 'blue', 'silver',
-  'normal', 'blue', 'gold', 'blueSilver',
-  'normal', 'blueGold', 'mutant', 'mutantSilver',
-  'normal', 'blue', 'silver', 'mutantGold',
-];
-const enemies = ENEMY_LINEUP.map((typeId, i) => {
-  const mouth = spawns[i % spawns.length];
-  // 同じ口から出る個体どうしが重ならないよう、少しずらす
-  const spread = (Math.floor(i / spawns.length) - 1.5) * 2.2;
-  const pos = new THREE.Vector3(
-    mouth.x + (mouth.x ? 0 : spread),
-    0,
-    mouth.z + (mouth.z ? 0 : spread)
-  );
-  return new Enemy(scene, pos, typeId);
+// ゾンビは作り直さず、この数だけ用意して使い回す。
+// 同時に出るのは WAVE.aliveMax 体までなので、これで足りる
+const enemies = Array.from(
+  { length: WAVE.aliveMax },
+  () => new Enemy(scene, new THREE.Vector3(0, 0, 0))
+);
+
+const waves = new Waves(enemies, spawns, {
+  onWaveStart: (wave, count) => hud.setToast(`ウェーブ ${wave} — ゾンビ ${count} 体`, 2.6),
+  onWaveClear: (wave) => {
+    addCoins(WAVE.clearCoins);
+    if (game) game.coins += WAVE.clearCoins;
+    hud.setToast(`ウェーブ ${wave} クリア！ 🪙+${WAVE.clearCoins}`, 3);
+  },
 });
 
 const builder = new Builder(scene, colliders, {});
@@ -161,7 +160,7 @@ function startGame(loadout) {
   projectiles.clear();
   drones.clear();
   builder.materials = { ...(job.materials ?? {}) };
-  for (const e of enemies) e.respawn();
+  waves.reset();
   playerBody.setVisible(false);
   playerBody.setDowned(false);
   playerBody.avatar.setHat(job.id);
@@ -702,6 +701,7 @@ function frame() {
     onSlam: (enemy, damage, radius) => slam(enemy, damage, radius, now),
     slamTargets,
   };
+  if (game && !paused) waves.update(dt);
   for (const e of enemies) e.update(dt, now, world);
   for (const s of builder.structures) {
     if (s.def.kind === 'turret') s.update(dt, enemies, (turret, target) => beamShot(turret, target, TURRET.damage, now));
@@ -766,6 +766,7 @@ function frame() {
       ult,
       skill: game.skill,
       coins: progress.coins,
+      waves,
     });
   } else if (game) {
     hud.update(dt, {
@@ -777,6 +778,7 @@ function frame() {
       ult: game.ult,
       skill: game.skill,
       coins: progress.coins,
+      waves,
     });
   } else {
     camera.position.set(0, EYE_HEIGHT, 8);

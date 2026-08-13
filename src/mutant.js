@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { canvasTexture, grungeTexture, muscleTexture, paint } from './textures.js';
+import { canvasTexture, grungeTexture, muscleTexture, paint, boxGeometry, disposeModel } from './textures.js';
+import { IS_TOUCH } from './device.js';
 import { ARMORS } from './zombie.js';
 
 // 前かがみで腕が太い大型ゾンビ。通常ゾンビより頭ひとつ大きい
@@ -56,10 +57,9 @@ const TEX = {
   face: faceTexture(),
 };
 
-function box(w, h, d, material) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-  m.castShadow = true;
-  m.receiveShadow = true;
+function box(w, h, d, material, shadow = !IS_TOUCH) {
+  const m = new THREE.Mesh(boxGeometry(w, h, d), material);
+  m.castShadow = shadow;
   return m;
 }
 
@@ -103,13 +103,13 @@ export class Mutant {
     this.torso.position.y = TORSO_H / 2;
     this.torso.rotation.x = HUNCH;
     this.hip.add(this.torso);
-    this.torso.add(box(TORSO_W, TORSO_H, TORSO_D, this.mats.skin));
+    this.torso.add(box(TORSO_W, TORSO_H, TORSO_D, this.mats.skin, true));
 
     this.neck = new THREE.Group();
     this.neck.position.set(0, TORSO_H / 2, TORSO_D * 0.12);
     this.torso.add(this.neck);
     const head = new THREE.Mesh(
-      new THREE.BoxGeometry(HEAD_W, HEAD_H, HEAD_D),
+      boxGeometry(HEAD_W, HEAD_H, HEAD_D),
       [this.mats.skinDark, this.mats.skinDark, this.mats.skinDark,
         this.mats.skinDark, this.mats.face, this.mats.skinDark]
     );
@@ -171,6 +171,10 @@ export class Mutant {
     const crest = box(HEAD_W * 0.16, HEAD_H * 0.26, HEAD_D * 1.2, this.armor.trim);
     crest.position.y = HEAD_H * 1.12;
     this.neck.add(helmet, crest);
+  }
+
+  dispose() {
+    disposeModel(this.root);
   }
 
   reset() {

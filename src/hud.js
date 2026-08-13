@@ -32,6 +32,8 @@ export class Hud {
     this.skillText = document.getElementById('skill-text');
     this.skillBtn = document.getElementById('btn-skill');
     this.coinText = document.getElementById('coin-text');
+    this.waveNum = document.getElementById('wave-num');
+    this.waveLeft = document.getElementById('wave-left');
     this.hurt = document.getElementById('hurt');
     this.toastTimer = 0;
     this.slotIds = [];
@@ -113,6 +115,7 @@ export class Hud {
     this.reloadBtn.classList.toggle('hidden', !cycles && item?.kind !== 'gun');
     this.reloadBtn.textContent = cycles ? '切替' : 'R';
 
+    this.#updateWave(state.waves);
     this.#updateUlt(state.ult);
     this.#updateSkill(state.skill);
     this.coinText.textContent = `🪙 ${state.coins ?? 0}`;
@@ -144,6 +147,18 @@ export class Hud {
     this.ultBar.classList.toggle('ready', ult.ready);
     this.ultBtn.classList.toggle('ready', ult.ready);
     this.ultBtn.style.setProperty('--charge', ult.value);
+  }
+
+  #updateWave(waves) {
+    if (!waves) return;
+    // ウェーブとウェーブの間は、次が始まるまでの秒数を出す
+    if (waves.state === 'break') {
+      this.waveNum.textContent = waves.wave ? `ウェーブ ${waves.wave} クリア` : '準備';
+      this.waveLeft.textContent = `次まで ${Math.ceil(Math.max(0, waves.timer))}秒`;
+      return;
+    }
+    this.waveNum.textContent = `ウェーブ ${waves.wave}`;
+    this.waveLeft.textContent = `残り ${waves.remaining} / ${waves.total}`;
   }
 
   // シャベルLv3以上のときだけ出る、攻撃を当てて貯めるスキル

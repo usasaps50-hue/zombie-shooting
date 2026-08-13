@@ -52,6 +52,8 @@ const KNOCKBACK_DAMPING = 7;
 const RADIUS = 0.45;
 const WANDER_RANGE = 14;
 const TURN_SPEED = 7;
+// これより遠いゾンビは、3フレームに1回だけ考える（そのぶん歩幅を3倍にする）
+const FAR_THINK = 34;
 
 const box = new THREE.Box3();
 
@@ -76,6 +78,9 @@ function bestCluster(targets, from, def) {
 
 export class Enemy {
   constructor(scene, position, typeId = 'normal') {
+    this.scene = scene;
+    // 使い回すので、倒されて消えた個体は active=false になって列に戻る
+    this.active = false;
     this.def = ENEMIES[typeId];
     this.maxHp = this.def.hp;
     this.hp = this.maxHp;
@@ -93,30 +98,66 @@ export class Enemy {
     // ミュータントの大ジャンプ。1回の生存につき1度だけ
     this.slamUsed = false;
     this.slamT = 0;
+    this.thinkSkip = 0;
     this.slamFrom = new THREE.Vector3();
     this.slamTo = new THREE.Vector3();
 
-    const height = this.def.height;
     this.root = new THREE.Group();
     this.root.position.copy(position);
+    this.root.visible = false;
+    this.hitbox = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.4, 1),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    this.root.add(this.hitbox);
+    this.label = makeLabel();
+    this.root.add(this.label.sprite);
+    scene.add(this.root);
+    this.#buildModel();
+  }
+
+  // 見た目と当たり判定を、いまの種類に合わせて作り直す
+  #buildModel() {
+    if (this.zombie) {
+      this.root.remove(this.zombie.root);
+      this.zombie.dispose?.();
+    }
     this.zombie = this.def.model === 'mutant'
       ? new Mutant(this.def.armor)
       : new Zombie(this.def.skin, this.def.armor);
     this.root.add(this.zombie.root);
 
     // アニメーションで動く見た目とは別に、当たり判定は固定のカプセルで取る
-    this.hitbox = new THREE.Mesh(
-      new THREE.CapsuleGeometry(height * 0.24, height - height * 0.48),
-      new THREE.MeshBasicMaterial({ visible: false })
-    );
+    const height = this.def.height;
+    this.hitbox.geometry.dispose();
+    this.hitbox.geometry = new THREE.CapsuleGeometry(height * 0.24, height - height * 0.48);
     this.hitbox.position.y = height / 2;
-    this.root.add(this.hitbox);
-
-    this.label = makeLabel(height > 2 ? 1.9 : 1.4);
+    this.label.sprite.scale.set(height > 2 ? 1.9 : 1.4, (height > 2 ? 1.9 : 1.4) / 4, 1);
     this.label.sprite.position.y = height + 0.35;
-    this.root.add(this.label.sprite);
-    scene.add(this.root);
-    this.#refresh();
+  }
+
+  // 列から取り出して、指定の種類として湧かせる
+  spawnAs(typeId, position) {
+    if (this.def.id !== typeId) {
+      this.def = ENEMIES[typeId];
+      this.maxHp = this.def.hp;
+      this.#buildModel();
+    }
+    this.home.copy(position);
+    this.root.position.copy(position);
+    this.root.visible = true;
+    this.active = true;
+    this.respawn();
+  }
+
+  // 倒されて消えたあと。モデルは残したまま隠して、次の湧きで使い回す
+  retire() {
+    this.active = false;
+    this.hp = 0;
+    this.root.visible = false;
+    this.state = 'dead';
+    this.target = null;
+    this.velocity.set(0, 0, 0);
   }
 
   get alive() {
@@ -142,7 +183,6 @@ export class Enemy {
       this.zombie.setMode('death');
       this.velocity.set(0, 0, 0);
       this.label.sprite.visible = false;
-      this.respawnAt = now + 8;
       this.state = 'dead';
       this.target = null;
     }
@@ -239,6 +279,7 @@ export class Enemy {
   }
 
   update(dt, now, world = {}) {
+    if (!this.active) return;
     const {
       colliders = [], structures = [], player = null,
       onHitPlayer = () => {}, onBreak = () => {}, onSlam = () => {}, slamTargets = () => [],
@@ -265,13 +306,20 @@ export class Enemy {
       }
     }
 
-    if (this.alive) this.#think(dt, now, colliders, structures, player, onHitPlayer, onBreak);
+    // 遠くてまだ気づいていない個体は、毎フレーム考えなくても見た目が変わらない
+    const far = player ? this.root.position.distanceToSquared(player.position) > FAR_THINK * FAR_THINK : true;
+    this.thinkSkip = far ? (this.thinkSkip + 1) % 3 : 0;
+
+    if (this.alive && !this.thinkSkip) {
+      this.#think(dt * (far ? 3 : 1), now, colliders, structures, player, onHitPlayer, onBreak);
+    }
 
     // モデルは +Z が正面。facing はカメラと同じ -Z 基準なので半回転ぶんずらす
     this.root.rotation.y = this.facing + Math.PI;
     this.zombie.update(dt);
 
-    if (!this.alive && now >= this.respawnAt) this.respawn();
+    // 倒れきったら列に戻す。次の湧きでこの個体が使い回される
+    if (!this.alive && this.zombie.deathFinished) this.retire();
   }
 
   #wantsSlam() {

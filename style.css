@@ -115,6 +115,17 @@ button.ghost { background: transparent; border: 1px solid #2a323d; color: #b6c0c
 #ult-fill { height: 100%; width: 0; background: linear-gradient(90deg, #8a6f3a, #e8c46a); transition: width .15s; }
 .tag { background: #4d7ea8; border-radius: 4px; padding: 1px 6px; margin-left: 8px; font-size: 11px; }
 
+/* ウェーブ表示。上の真ん中に置く */
+#wave {
+  position: absolute; left: 50%; top: calc(10px + var(--safe-t)); transform: translateX(-50%);
+  display: flex; gap: 12px; align-items: baseline;
+  background: rgba(12, 16, 22, .72); border: 1px solid #39424e; border-radius: 8px;
+  padding: 6px 16px; white-space: nowrap;
+}
+#wave-num { font-size: 15px; font-weight: 700; color: #e8c46a; }
+#wave-left { font-size: 12px; color: #cbd4de; font-variant-numeric: tabular-nums; }
+body.hub #wave { display: none; }
+
 /* アイテム欄が武器の絵ぶん高くなったので、弾数はその上に逃がす */
 #ammo { position: absolute; right: 22px; bottom: 106px; font-size: 30px; font-weight: 700; text-shadow: 0 2px 4px #000; font-variant-numeric: tabular-nums; }
 

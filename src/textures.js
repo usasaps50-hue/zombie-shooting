@@ -58,3 +58,26 @@ export function muscleTexture(base, dark, spot, density = 200) {
 }
 
 export { paint };
+
+// 同じ大きさの箱は形を使い回す。ゾンビが20体いても形は数種類で足りる
+const boxCache = new Map();
+export function boxGeometry(w, h, d) {
+  const key = `${w.toFixed(3)},${h.toFixed(3)},${d.toFixed(3)}`;
+  let geo = boxCache.get(key);
+  if (!geo) {
+    geo = new THREE.BoxGeometry(w, h, d);
+    // 使い回しているので、モデルを捨てるときに dispose してはいけない目印
+    geo.userData.shared = true;
+    boxCache.set(key, geo);
+  }
+  return geo;
+}
+
+// モデルを作り直すときの後片付け。共有している形は残す
+export function disposeModel(root) {
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    if (!o.geometry.userData.shared) o.geometry.dispose();
+    for (const m of [o.material].flat()) m.dispose();
+  });
+}

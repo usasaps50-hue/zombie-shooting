@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { canvasTexture, grungeTexture } from './textures.js';
+import { canvasTexture, grungeTexture, boxGeometry, disposeModel } from './textures.js';
+import { IS_TOUCH } from './device.js';
 
 const TORSO_W = 1.5, TORSO_H = 1.5, TORSO_D = 0.75;
 const HEAD_W = 1.0, HEAD_H = 0.95, HEAD_D = 1.0;
@@ -104,10 +105,10 @@ const ATTACK_HIT_TIME = 0.42;
 const easeOutCubic = (x) => 1 - (1 - x) ** 3;
 const easeOutBack = (x) => 1 + 2.7 * (x - 1) ** 3 + 1.7 * (x - 1) ** 2;
 
-function box(w, h, d, material) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-  m.castShadow = true;
-  m.receiveShadow = true;
+// 20体ぶんの手足すべてに影を落とさせると重い。胴と頭だけ影を出す
+function box(w, h, d, material, shadow = !IS_TOUCH) {
+  const m = new THREE.Mesh(boxGeometry(w, h, d), material);
+  m.castShadow = shadow;
   return m;
 }
 
@@ -149,13 +150,13 @@ export class Zombie {
     this.torso = new THREE.Group();
     this.torso.position.y = TORSO_H / 2;
     this.hip.add(this.torso);
-    this.torso.add(box(TORSO_W, TORSO_H, TORSO_D, this.mats.sleeve));
+    this.torso.add(box(TORSO_W, TORSO_H, TORSO_D, this.mats.sleeve, true));
 
     this.neck = new THREE.Group();
     this.neck.position.y = TORSO_H / 2;
     this.torso.add(this.neck);
     const head = new THREE.Mesh(
-      new THREE.BoxGeometry(HEAD_W, HEAD_H, HEAD_D),
+      boxGeometry(HEAD_W, HEAD_H, HEAD_D),
       [this.mats.dark, this.mats.dark, this.mats.dark, this.mats.dark, this.mats.face, this.mats.dark]
     );
     head.position.y = HEAD_H / 2;
@@ -250,6 +251,10 @@ export class Zombie {
 
     g.add(mound, stone, front, cap);
     return g;
+  }
+
+  dispose() {
+    disposeModel(this.root);
   }
 
   reset() {
