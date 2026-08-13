@@ -40,7 +40,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 300);
-const { scene, colliders } = createWorld();
+const { scene, colliders, spawns } = createWorld();
 scene.add(camera);
 
 const input = new Input(canvas);
@@ -60,21 +60,24 @@ teammates[1].setDowned(true);
 const playerBody = new Teammate(scene, { name: 'あなた', color: 0x5f7f9f, jobId: 'soldier', position: new THREE.Vector3() });
 playerBody.setVisible(false);
 
-const enemies = [
-  new Enemy(scene, new THREE.Vector3(-12, 0, -22)),
-  new Enemy(scene, new THREE.Vector3(1, 0, -26)),
-  new Enemy(scene, new THREE.Vector3(14, 0, -21)),
-  // 青ゾンビは索敵範囲が広いので、遠くに置いても寄ってくる
-  new Enemy(scene, new THREE.Vector3(-22, 0, -34), 'blue'),
-  new Enemy(scene, new THREE.Vector3(20, 0, -36), 'blue'),
-  new Enemy(scene, new THREE.Vector3(-6, 0, -30), 'silver'),
-  new Enemy(scene, new THREE.Vector3(8, 0, -32), 'gold'),
-  new Enemy(scene, new THREE.Vector3(-16, 0, -40), 'blueSilver'),
-  new Enemy(scene, new THREE.Vector3(16, 0, -42), 'blueGold'),
-  new Enemy(scene, new THREE.Vector3(0, 0, -44), 'mutant'),
-  new Enemy(scene, new THREE.Vector3(-26, 0, -46), 'mutantSilver'),
-  new Enemy(scene, new THREE.Vector3(26, 0, -48), 'mutantGold'),
+// ゾンビは4方向のトンネルから出てくる。倒しても同じトンネルに戻って出直す
+const ENEMY_LINEUP = [
+  'normal', 'normal', 'blue', 'silver',
+  'normal', 'blue', 'gold', 'blueSilver',
+  'normal', 'blueGold', 'mutant', 'mutantSilver',
+  'normal', 'blue', 'silver', 'mutantGold',
 ];
+const enemies = ENEMY_LINEUP.map((typeId, i) => {
+  const mouth = spawns[i % spawns.length];
+  // 同じ口から出る個体どうしが重ならないよう、少しずらす
+  const spread = (Math.floor(i / spawns.length) - 1.5) * 2.2;
+  const pos = new THREE.Vector3(
+    mouth.x + (mouth.x ? 0 : spread),
+    0,
+    mouth.z + (mouth.z ? 0 : spread)
+  );
+  return new Enemy(scene, pos, typeId);
+});
 
 const builder = new Builder(scene, colliders, {});
 const projectiles = new Projectiles(scene, effects);

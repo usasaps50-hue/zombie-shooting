@@ -3,6 +3,7 @@ import { Avatar } from './avatar.js';
 import { Zombie } from './zombie.js';
 import { Mutant } from './mutant.js';
 import { ENEMIES, JOBS } from './data/jobs.js';
+import { floorHeight, STEP_HEIGHT } from './player.js';
 import { makeLabel, hpColor } from './label.js';
 
 export class Teammate {
@@ -153,10 +154,12 @@ export class Enemy {
     this.velocity.addScaledVector(direction, power);
   }
 
-  // 足元の当たり判定を x,z に置いたときに何とぶつかるか
+  // 足元の当たり判定を x,z に置いたときに何とぶつかるか。
+  // 下端を段差ぶん上げてあるので、階段のような低い段は素通りして上れる
   #blocker(x, z, colliders, structures) {
-    box.min.set(x - RADIUS, 0.1, z - RADIUS);
-    box.max.set(x + RADIUS, this.def.height * 0.8, z + RADIUS);
+    const feet = this.root.position.y;
+    box.min.set(x - RADIUS, feet + STEP_HEIGHT, z - RADIUS);
+    box.max.set(x + RADIUS, feet + this.def.height * 0.8, z + RADIUS);
     if (colliders.some((c) => c.intersectsBox(box))) return 'nature';
     return structures.find((s) => s.alive && s.box.intersectsBox(box)) ?? null;
   }
@@ -175,6 +178,9 @@ export class Enemy {
         hitStructure = blocker;
       }
     }
+    // 段差を上り、床がなくなったら落ちる
+    const floor = floorHeight(colliders, p.x, p.z, p.y, RADIUS);
+    p.y = floor > p.y ? floor : THREE.MathUtils.lerp(p.y, floor, 0.35);
     return hitStructure;
   }
 
@@ -217,15 +223,16 @@ export class Enemy {
     this.#face(Math.atan2(-(spot.x - this.root.position.x), -(spot.z - this.root.position.z)), 1);
   }
 
-  #flySlam(dt, onSlam) {
+  #flySlam(dt, onSlam, colliders) {
     this.slamT = Math.min(this.slamT + dt / this.def.slamTime, 1);
     const p = this.slamT;
+    const landing = floorHeight(colliders, this.slamTo.x, this.slamTo.z, this.def.slamHeight, RADIUS);
     this.root.position.lerpVectors(this.slamFrom, this.slamTo, p);
     // 山なりの弧。0と1で地面、真ん中で最高点
-    this.root.position.y = Math.sin(p * Math.PI) * this.def.slamHeight;
+    this.root.position.y = landing * p + Math.sin(p * Math.PI) * this.def.slamHeight;
     if (p < 1) return;
 
-    this.root.position.y = 0;
+    this.root.position.y = landing;
     this.state = 'chase';
     this.zombie.setMode('idle');
     onSlam(this, this.def.slamDamage, this.def.slamRadius);
@@ -238,7 +245,7 @@ export class Enemy {
     } = world;
 
     if (this.state === 'slam') {
-      this.#flySlam(dt, onSlam);
+      this.#flySlam(dt, onSlam, colliders);
       this.root.rotation.y = this.facing + Math.PI;
       this.zombie.update(dt);
       return;

@@ -9,15 +9,31 @@ const JUMP_SPEED = 5.0;
 const GRAVITY = 20.0;
 const MAX_PITCH = Math.PI / 2 - 0.05;
 
+// これ以下の段差は、ぶつからずに上れる。階段の1段ぶんより少し高くしてある
+export const STEP_HEIGHT = 0.6;
+
 const tmpBox = new THREE.Box3();
 const tmpMin = new THREE.Vector3();
 const tmpMax = new THREE.Vector3();
 
+// 当たり判定の下端を段差ぶん持ち上げる。低い段は素通りするので、階段を歩いて上れる
 export function collides(colliders, x, y, z) {
-  tmpMin.set(x - PLAYER_RADIUS, y - EYE_HEIGHT, z - PLAYER_RADIUS);
+  const feet = y - EYE_HEIGHT;
+  tmpMin.set(x - PLAYER_RADIUS, feet + STEP_HEIGHT, z - PLAYER_RADIUS);
   tmpMax.set(x + PLAYER_RADIUS, y, z + PLAYER_RADIUS);
   tmpBox.set(tmpMin, tmpMax);
   return colliders.some((c) => c.intersectsBox(tmpBox));
+}
+
+// 足元にある一番高い床の高さ。上れないほど高い面は無視する
+export function floorHeight(colliders, x, z, feet, radius = PLAYER_RADIUS) {
+  let best = 0;
+  for (const c of colliders) {
+    if (x < c.min.x - radius || x > c.max.x + radius) continue;
+    if (z < c.min.z - radius || z > c.max.z + radius) continue;
+    if (c.max.y > best && c.max.y <= feet + STEP_HEIGHT) best = c.max.y;
+  }
+  return best;
 }
 
 export class Player {
@@ -88,12 +104,18 @@ export class Player {
       this.velY = JUMP_SPEED;
       this.onGround = false;
     }
+
+    // 足元の床の高さ。階段や廃墟の上に乗ると、そのぶん立つ位置が上がる
+    const feet = p.y - EYE_HEIGHT;
+    const floor = floorHeight(colliders, p.x, p.z, feet);
     this.velY -= GRAVITY * dt;
     p.y += this.velY * dt;
-    if (p.y < EYE_HEIGHT) {
-      p.y = EYE_HEIGHT;
+    if (p.y < floor + EYE_HEIGHT) {
+      p.y = floor + EYE_HEIGHT;
       this.velY = 0;
       this.onGround = true;
+    } else {
+      this.onGround = false;
     }
   }
 

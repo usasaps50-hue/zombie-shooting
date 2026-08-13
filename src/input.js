@@ -199,7 +199,9 @@ export class Input {
     });
 
     const hold = (id, on, off) => {
+      // 画面に無いボタンは黙って飛ばす（ジャンプのように後から消すことがある）
       const el = document.getElementById(id);
+      if (!el) return;
       el.addEventListener('touchstart', (e) => { e.preventDefault(); on(); }, { passive: false });
       el.addEventListener('touchend', (e) => { e.preventDefault(); off?.(); }, { passive: false });
       el.addEventListener('touchcancel', () => off?.());
@@ -207,7 +209,6 @@ export class Input {
 
     hold('btn-fire', () => { this.fire = true; }, () => { this.fire = false; });
     hold('btn-use', () => { this.use = true; }, () => { this.use = false; });
-    hold('btn-jump', () => { this.jumpQueued = true; });
     hold('btn-reload', () => { this.reloadQueued = true; });
     hold('btn-ult', () => { this.ultQueued = true; });
     hold('btn-skill', () => { this.skillQueued = true; });
