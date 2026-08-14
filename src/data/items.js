@@ -60,4 +60,5 @@ export const ITEMS = {
 };
 
 export const SELECTABLE_ITEMS = ['pistol', 'ak47', 'shovel', 'hammer'];
-export const MAX_SLOTS = 3;
+// 持てる数はクラスのレベルで変わる（progress.js の maxSlots）
+export const BASE_SLOTS = 3;

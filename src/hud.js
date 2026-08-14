@@ -23,7 +23,7 @@ export class Hud {
     this.toast = document.getElementById('toast');
     this.materials = document.getElementById('materials');
     this.buildInfo = document.getElementById('build-info');
-    this.touchSlots = [0, 1, 2].map((i) => document.getElementById(`btn-slot-${i}`));
+    this.touchSlots = [0, 1, 2, 3].map((i) => document.getElementById(`btn-slot-${i}`));
     this.reloadBtn = document.getElementById('btn-reload');
     this.ultBar = document.getElementById('ult-bar');
     this.ultFill = document.getElementById('ult-fill');
@@ -32,6 +32,7 @@ export class Hud {
     this.skillText = document.getElementById('skill-text');
     this.skillBtn = document.getElementById('btn-skill');
     this.coinText = document.getElementById('coin-text');
+    this.aimBtn = document.getElementById('btn-aim');
     this.waveNum = document.getElementById('wave-num');
     this.waveLeft = document.getElementById('wave-left');
     this.hurt = document.getElementById('hurt');
@@ -69,8 +70,15 @@ export class Hud {
   show() { this.el.classList.remove('hidden'); }
   hide() { this.el.classList.add('hidden'); }
 
-  buildSlots(itemIds) {
+  // 構えるボタンは、銃を持っているときだけ出す
+  setAiming(canAim, aiming) {
+    this.aimBtn.classList.toggle('hidden', !canAim);
+    this.aimBtn.classList.toggle('on', !!aiming);
+  }
+
+  buildSlots(itemIds, slots = 3) {
     this.slotIds = itemIds;
+    this.slotCount = slots;
     this.slots.innerHTML = '';
     itemIds.forEach((id, i) => {
       const li = document.createElement('li');
@@ -139,14 +147,16 @@ export class Hud {
     for (const el of [this.ultBar, this.ultText, this.ultBtn]) el.classList.toggle('hidden', !ult);
     if (!ult) return;
 
-    const percent = Math.floor(ult.value * 100);
+    const percent = Math.floor(ult.progress * 100);
     this.ultFill.style.width = `${percent}%`;
+    // 2回ためられるクラスでは、たまっている回数も出す
+    const stock = ult.stock > 1 ? `×${ult.charges} ` : '';
     this.ultText.textContent = ult.ready
-      ? `${ult.def.name}　${ULT_READY}`
+      ? `${ult.def.name}　${stock}${ULT_READY}`
       : `${ult.def.name}　${percent}%`;
     this.ultBar.classList.toggle('ready', ult.ready);
     this.ultBtn.classList.toggle('ready', ult.ready);
-    this.ultBtn.style.setProperty('--charge', ult.value);
+    this.ultBtn.style.setProperty('--charge', ult.progress);
   }
 
   #updateWave(waves) {

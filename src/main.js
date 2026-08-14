@@ -12,7 +12,7 @@ import { makeItemIcons } from './itemicon.js';
 import { upgradedItem, MAX_LEVEL, ROLLING_SMASH, HEADSHOT } from './data/upgrades.js';
 import { Waves } from './waves.js';
 import { WAVE } from './data/waves.js';
-import { progress, levelOf, addCoins } from './progress.js';
+import { progress, levelOf, addCoins, classBonus, maxSlots } from './progress.js';
 import { Teammate, Enemy } from './entities.js';
 import { Effects } from './effects.js';
 import { Builder } from './build.js';
@@ -22,6 +22,7 @@ import { ITEMS } from './data/items.js';
 import { JOBS, PLAYER } from './data/jobs.js';
 import { TURRET, MATERIALS } from './data/builds.js';
 import { ULTIMATES, HOSPITAL, DRONE, GOD_TURRET_ODDS } from './data/ultimates.js';
+import { ARMOR_GUN_REDUCTION } from './data/classes.js';
 import { IS_TOUCH, QUALITY } from './device.js';
 
 const canvas = document.getElementById('game');
@@ -87,6 +88,9 @@ scene.add(muzzle);
 
 const SHOVEL_KNOCKBACK = 4.0;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
+// 構えたときの画角。狭くするとズームして見える
+const FOV_NORMAL = 75;
+const FOV_AIM = 42;
 
 // HUDと店で使う武器アイコン。実際の3Dモデルを描いた画像（金色版も作っておく）
 const ITEM_ICONS = makeItemIcons([
@@ -104,7 +108,8 @@ let place = 'lobby';
 let hubPlayer = null;
 let hubTime = 0;
 let usePressed = false;
-let loadout = { passphrase: randomPass(), jobId: 'soldier', items: ['pistol', 'shovel'] };
+// 最初はシャベルだけ。ピストルもクラスも待機場のお店で買う
+let loadout = { passphrase: randomPass(), jobId: 'soldier', items: ['shovel'] };
 
 const shop = new Shop(ITEM_ICONS, {
   onChange: () => hud.setToast('そうびを変えた', 1.2),
@@ -145,9 +150,13 @@ function startGame(loadout) {
   const weapons = new Weapons(loadout.items.map((id) => upgradedItem(id, levelOf(id))), onWeaponEvent);
   const hasSkill = loadout.items.some((id) => upgradedItem(id, levelOf(id)).effects.skill);
 
+  const bonus = classBonus(job.id);
+  player.damageReduction = bonus.damageReduction ?? 0;
+
   game = {
     player, weapons, loadout, job, hold: 0, holdAction: null,
-    ult: new UltimateCharge(job.id),
+    bonus,
+    ult: new UltimateCharge(job.id, bonus.ultStock ?? 1),
     skill: hasSkill ? { name: 'ローリングスマッシュ', charge: 0, need: ROLLING_SMASH.need, ready: false } : null,
     spin: 0,
     coins: 0,
@@ -165,7 +174,7 @@ function startGame(loadout) {
   playerBody.setVisible(false);
   playerBody.setDowned(false);
   playerBody.avatar.setHat(job.id);
-  hud.buildSlots(loadout.items);
+  hud.buildSlots(loadout.items, maxSlots(job.id));
   hud.show();
   viewModel.setItem(weapons.current?.id ?? null);
   hud.setToast(`バトル開始！ 合言葉「${loadout.passphrase}」`, 2.5);
@@ -276,6 +285,9 @@ function rollDrops(def) {
 
 // source はダメージを出した武器。レベルの特典はこれで判定する
 function damageEnemy(enemy, amount, now, source = null) {
+  // 装甲を着たゾンビは、銃とタレットの弾が通りにくい
+  if (enemy.def.armor && source?.kind === 'gun') amount *= 1 - ARMOR_GUN_REDUCTION;
+  amount = Math.max(1, Math.round(amount));
   const dealt = Math.min(amount, enemy.hp);
   // ジャンプ中など、当たらないこともある
   if (!enemy.hit(amount, now)) return false;
@@ -348,13 +360,16 @@ function shoot(item) {
   }
 }
 
+// タレットやドローンの弾も「銃」扱いにして、装甲のダメージ減を効かせる
+const BEAM_SOURCE = { kind: 'gun', effects: {} };
+
 // タレットやドローンの射撃。銃口の爆発と弾道は他の人からも見える
 function beamShot(shooter, target, damage, now) {
   const from = shooter.muzzle();
   const to = target.position.clone().setY(1.0);
   effects.muzzleFlash(from, to.clone().sub(from).normalize());
   effects.tracer(from, to);
-  damageEnemy(target, damage, now);
+  damageEnemy(target, damage, now, BEAM_SOURCE);
 }
 
 function explode(center, radius, damage, now) {
@@ -757,13 +772,24 @@ function frame() {
     if (input.fire && !player.downed) weapons.trigger();
 
     // 持っている武器のレベル特典（シャベルLv2の移動速度など）
-    player.speedBonus = weapons.current?.effects?.speedBonus ?? 0;
+    player.speedBonus = (weapons.current?.effects?.speedBonus ?? 0) + (game.bonus.speedBonus ?? 0);
 
     const held = player.downed ? null : weapons.current?.id ?? null;
     const heldGold = held ? levelOf(held) >= MAX_LEVEL : false;
     const heldSilencer = !!weapons.current?.effects?.silencer;
     viewModel.setItem(held, heldGold, heldSilencer);
     const anim = weapons.animProgress();
+
+    // 銃を持っているときだけ構えられる。画角をなめらかに寄せる
+    const canAim = weapons.current?.kind === 'gun' && !player.downed;
+    const aiming = canAim && input.aim;
+    viewModel.aim = aiming;
+    hud.setAiming(canAim, aiming);
+    const wantFov = aiming ? FOV_AIM : FOV_NORMAL;
+    if (Math.abs(camera.fov - wantFov) > 0.05) {
+      camera.fov = THREE.MathUtils.lerp(camera.fov, wantFov, Math.min(dt * 12, 1));
+      camera.updateProjectionMatrix();
+    }
 
     if (weapons.current?.kind === 'build' && !player.downed) builder.aim(camera, player.position);
     else builder.hideGhost();

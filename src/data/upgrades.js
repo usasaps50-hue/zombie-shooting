@@ -44,7 +44,7 @@ export const UPGRADES = {
 export const ROLLING_SMASH = { need: 5, range: 4.2, damageScale: 1.0, spinTime: 0.7 };
 
 // 頭に当てたときの倍率
-export const HEADSHOT = { multiplier: 2, from: 0.78 };
+export const HEADSHOT = { multiplier: 1.1, from: 0.78 };
 
 export function levelCost(itemId, level) {
   return UPGRADES[itemId]?.levels[level - 1]?.cost ?? null;

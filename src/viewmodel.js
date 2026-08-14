@@ -141,6 +141,12 @@ export class ViewModel {
     base.pos.x *= narrow;
     m.scale.setScalar((longHandled ? 0.5 : 1) * (0.6 + narrow * 0.4));
 
+    // 構えているときは、銃を画面の真ん中へ寄せて構え直す
+    if (this.aim && !longHandled) {
+      base.pos.set(0.02 * narrow, -0.13, -0.42);
+      base.rot.set(0, 0, 0);
+    }
+
     m.position.copy(base.pos);
     m.rotation.copy(base.rot);
     m.position.x += Math.sin(this.bob) * sway;

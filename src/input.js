@@ -10,6 +10,7 @@ export class Input {
     this.move = { x: 0, y: 0 };
     this.look = { dx: 0, dy: 0 };
     this.fire = false;
+    this.aim = false;
     this.run = false;
     this.use = false;
     this.jumpQueued = false;
@@ -76,6 +77,7 @@ export class Input {
     this.move.x = 0;
     this.move.y = 0;
     this.fire = false;
+    this.aim = false;
     this.run = false;
     this.use = false;
     this.jumpQueued = false;
@@ -103,6 +105,7 @@ export class Input {
       if (e.code === 'Digit1') this.slotQueued = 0;
       if (e.code === 'Digit2') this.slotQueued = 1;
       if (e.code === 'Digit3') this.slotQueued = 2;
+      if (e.code === 'Digit4') this.slotQueued = 3;
       sync();
     });
     addEventListener('keyup', (e) => {
@@ -127,10 +130,14 @@ export class Input {
     });
     this.canvas.addEventListener('mousedown', (e) => {
       if (e.button === 0) this.fire = true;
+      // 右クリックで構える。ブラウザのメニューは出さない
+      if (e.button === 2) this.aim = true;
     });
     addEventListener('mouseup', (e) => {
       if (e.button === 0) this.fire = false;
+      if (e.button === 2) this.aim = false;
     });
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   #bindTouch() {
@@ -212,6 +219,7 @@ export class Input {
     hold('btn-reload', () => { this.reloadQueued = true; });
     hold('btn-ult', () => { this.ultQueued = true; });
     hold('btn-skill', () => { this.skillQueued = true; });
-    for (let i = 0; i < 3; i++) hold(`btn-slot-${i}`, () => { this.slotQueued = i; });
+    hold('btn-aim', () => { this.aim = true; }, () => { this.aim = false; });
+    for (let i = 0; i < 4; i++) hold(`btn-slot-${i}`, () => { this.slotQueued = i; });
   }
 }

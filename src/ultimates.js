@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import { ULTIMATES, BOMB, GOD_TURRET, DRONE } from './data/ultimates.js';
 import { makeLabel, hpColor } from './label.js';
 
+// value は「たまっている回数」。1.0 で1回ぶん、stock まで貯めておける
 export class UltimateCharge {
-  constructor(jobId) {
+  constructor(jobId, stock = 1) {
     this.def = ULTIMATES[jobId];
+    this.stock = stock;
     this.value = this.def.startCharge;
   }
 
@@ -12,10 +14,19 @@ export class UltimateCharge {
     return this.value >= 1;
   }
 
+  // 表示用。いま満タンの何割まで来ているか（1回ぶんの中での進み具合）
+  get progress() {
+    return this.ready ? 1 : this.value % 1;
+  }
+
+  get charges() {
+    return Math.floor(this.value);
+  }
+
   // kind が自分の貯め方と一致したときだけ増える
   add(kind, amount) {
-    if (kind !== this.def.charge || this.ready || !(amount > 0)) return;
-    this.value = Math.min(1, this.value + amount / this.def.need);
+    if (kind !== this.def.charge || this.value >= this.stock || !(amount > 0)) return;
+    this.value = Math.min(this.stock, this.value + amount / this.def.need);
   }
 
   tick(dt) {
@@ -23,7 +34,7 @@ export class UltimateCharge {
   }
 
   consume() {
-    this.value = 0;
+    this.value = Math.max(0, this.value - 1);
   }
 }
 

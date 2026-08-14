@@ -187,7 +187,7 @@ body.touch #touch-ui { display: block; }
   display: grid; gap: 10px;
   grid-template-areas:
     "skill  ult   reload"
-    ".      .     use"
+    ".      aim   use"
     ".      .     fire";
   justify-items: center; align-items: end;
 }
@@ -196,6 +196,7 @@ body.touch #touch-ui { display: block; }
 #btn-reload { grid-area: reload; }
 #btn-use { grid-area: use; }
 #btn-fire { grid-area: fire; }
+#btn-aim { grid-area: aim; }
 #touch-slots {
   position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(14px + var(--safe-b));
   display: flex; gap: 8px;
@@ -223,6 +224,9 @@ body.touch #touch-ui { display: block; }
   border-color: rgba(232, 196, 106, .35); color: #d8ccae;
 }
 .tbtn.ult.ready { color: #fff; border-color: #e8c46a; box-shadow: 0 0 10px rgba(232, 196, 106, .7); }
+/* 構えるボタン。押している間だけズームする */
+.tbtn.aim { background: rgba(255, 255, 255, .1); border-color: rgba(200, 220, 240, .45); }
+.tbtn.aim.on { background: rgba(111, 168, 220, .35); border-color: #6fa8dc; color: #fff; }
 /* スキル。必殺技と同じく、溜まった量を円グラフのように塗る */
 .tbtn.skill {
   --charge: 0; font-size: 14px;
@@ -251,6 +255,7 @@ body.hub #btn-fire,
 body.hub #btn-reload,
 body.hub #btn-ult,
 body.hub #btn-skill,
+body.hub #btn-aim,
 body.hub #coin-text { display: none; }
 /* 待機場では「待機場に戻る」は出さない */
 body.hub #btn-tohub { display: none; }

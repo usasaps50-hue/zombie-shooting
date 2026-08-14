@@ -1,7 +1,12 @@
-import { ITEMS, SELECTABLE_ITEMS, MAX_SLOTS } from './data/items.js';
+import { ITEMS, SELECTABLE_ITEMS } from './data/items.js';
 import { JOBS } from './data/jobs.js';
 import { UPGRADES, MAX_LEVEL, DAMAGE_PER_LEVEL } from './data/upgrades.js';
-import { progress, levelOf, upgradeStatus, upgrade } from './progress.js';
+import { CLASS_LEVELS, CLASS_MAX_LEVEL, JOB_PRICE, ITEM_PRICE } from './data/classes.js';
+import {
+  progress, levelOf, upgradeStatus, upgrade,
+  classLevelOf, classStatus, upgradeClass,
+  ownsItem, ownsJob, buyItem, buyJob, maxSlots,
+} from './progress.js';
 
 const JOB_MARK = { soldier: '★', medic: '✚', architect: '⚒' };
 
@@ -76,71 +81,127 @@ export class Shop {
   #icon(id) {
     const gold = levelOf(id) >= MAX_LEVEL;
     const src = this.icons[gold ? `${id}:gold` : id] ?? this.icons[id];
-    // アイテムショップの一覧に合わせて、共通のふるまいにしておく
     return src
       ? `<img class="shop-icon" src="${src}" alt="">`
       : `<span class="shop-emoji">${ITEMS[id].icon}</span>`;
   }
 
   #renderItems() {
+    const slots = maxSlots(this.loadout.jobId);
     this.titleEl.textContent = 'アイテムショップ';
     this.keeperEl.textContent = 'ハルさん';
-    this.noteEl.textContent = `持てるのは${MAX_SLOTS}つまで。いまは全部むりょうで持っていけます。`;
+    this.noteEl.textContent = `いま持っていけるのは${slots}つまで。持っていない武器はコインで買えるよ。`;
 
     for (const id of SELECTABLE_ITEMS) {
       const item = ITEMS[id];
-      const locked = item.jobOnly && item.jobOnly !== this.loadout.jobId;
+      const jobLocked = item.jobOnly && item.jobOnly !== this.loadout.jobId;
+      const owned = ownsItem(id);
       const on = this.loadout.items.includes(id);
-      const level = levelOf(id);
-      const stat = locked
-        ? `${JOBS[item.jobOnly].name}せんよう`
-        : item.kind === 'gun'
-          ? `Lv${level}　火力 ${item.damage} ／ 装弾数 ${item.magazine}発`
-          : item.kind === 'build'
-            ? '壁とタレットを建てる'
-            : `Lv${level}　火力 ${item.damage} ／ ${item.cooldown}秒に1回`;
+      const price = ITEM_PRICE[id] ?? 0;
 
-      this.#row(on, this.#icon(id), item.name, stat, locked ? '×' : on ? 'はずす' : '持つ', () => {
-        if (locked) return;
+      const stat = jobLocked
+        ? `${JOBS[item.jobOnly].name}せんよう`
+        : !owned
+          ? `まだ持っていない（${price}コイン）`
+          : item.kind === 'gun'
+            ? `Lv${levelOf(id)}　火力 ${item.damage} ／ 装弾数 ${item.magazine}発`
+            : item.kind === 'build'
+              ? '壁とタレットを建てる'
+              : `Lv${levelOf(id)}　火力 ${item.damage} ／ ${item.cooldown}秒に1回`;
+
+      const action = jobLocked ? '×' : !owned ? `🪙${price}` : on ? 'はずす' : '持つ';
+
+      const row = this.#row(on, this.#icon(id), item.name, stat, action, () => {
+        if (jobLocked) return;
+        if (!owned) {
+          if (!buyItem(id)) {
+            this.noteEl.textContent = `コインが ${price - progress.coins} 枚たりないよ。`;
+            return;
+          }
+          this.noteEl.textContent = `${item.name}を買った！`;
+          this.render();
+          this.onChange();
+          return;
+        }
         const i = this.loadout.items.indexOf(id);
         if (i >= 0) this.loadout.items.splice(i, 1);
-        else if (this.loadout.items.length < MAX_SLOTS) this.loadout.items.push(id);
+        else if (this.loadout.items.length < slots) this.loadout.items.push(id);
         this.render();
         this.onChange();
       });
+      if (jobLocked || (!owned && progress.coins < price)) row.classList.add('cant');
     }
   }
 
   #renderJobs() {
     this.titleEl.textContent = 'クラスショップ';
     this.keeperEl.textContent = 'ミナさん';
-    this.noteEl.textContent = 'クラスを変えると、せんようアイテムが自動でついてきます。';
+    this.noteEl.textContent = 'クラスを買って選べます。レベルアップはレベルアップ所へどうぞ。';
 
     for (const job of Object.values(JOBS)) {
+      const owned = ownsJob(job.id);
       const on = job.id === this.loadout.jobId;
-      this.#row(on, `<span class="shop-emoji">${JOB_MARK[job.id] ?? '★'}</span>`, job.name,
-        `HP ${job.hp} ／ 移動 ${Math.round(job.speedScale * 100)}%　${job.desc}`,
-        on ? 'えらび中' : 'する', () => {
+      const price = JOB_PRICE[job.id] ?? 0;
+      const stat = owned
+        ? `Lv${classLevelOf(job.id)}　HP ${job.hp} ／ 移動 ${Math.round(job.speedScale * 100)}%　${job.desc}`
+        : `まだ持っていない（${price}コイン）　${job.desc}`;
+      const action = !owned ? `🪙${price}` : on ? 'えらび中' : 'する';
+
+      const row = this.#row(on, `<span class="shop-emoji">${JOB_MARK[job.id] ?? '★'}</span>`,
+        job.name, stat, action, () => {
+          if (!owned) {
+            if (!buyJob(job.id)) {
+              this.noteEl.textContent = `コインが ${price - progress.coins} 枚たりないよ。`;
+              return;
+            }
+            this.noteEl.textContent = `${job.name}を買った！`;
+            this.render();
+            this.onChange();
+            return;
+          }
           this.loadout.jobId = job.id;
           syncJobItems(this.loadout);
           this.render();
           this.onChange();
         });
+      if (!owned && progress.coins < price) row.classList.add('cant');
     }
   }
 
   #renderLevelUp() {
     this.titleEl.textContent = 'レベルアップ所';
     this.keeperEl.textContent = 'ゲンさん';
-    this.noteEl.textContent = 'ゾンビを倒すとコインが手に入る。武器はレベル5まで、1つ上がるごとに火力も5%増えるよ。';
+    this.noteEl.textContent = 'ゾンビを倒すとコインが手に入る。武器もクラスもレベル5までだよ。';
 
+    // 持っているクラスのレベルアップ
+    for (const job of Object.values(JOBS)) {
+      if (!ownsJob(job.id)) continue;
+      const level = classLevelOf(job.id);
+      const status = classStatus(job.id);
+      const next = status.max ? 'これ以上は上がらない（最大）' : CLASS_LEVELS[level].desc;
+      const stat = `クラス Lv${level} / ${CLASS_MAX_LEVEL}<br><span class="shop-next">次：${next}</span>`;
+
+      const row = this.#row(false, `<span class="shop-emoji">${JOB_MARK[job.id] ?? '★'}</span>`,
+        job.name, stat, status.max ? 'MAX' : `🪙${status.cost}`, () => {
+          if (status.max) return;
+          if (!upgradeClass(job.id)) {
+            this.noteEl.textContent = `コインが ${status.cost - progress.coins} 枚たりないよ。`;
+            return;
+          }
+          this.noteEl.textContent = `${job.name}が Lv${classLevelOf(job.id)} になった！`;
+          this.render();
+          this.onChange();
+        });
+      if (!status.max && !status.afford) row.classList.add('cant');
+    }
+
+    // 持っている武器のレベルアップ
     for (const id of Object.keys(UPGRADES)) {
+      if (!ownsItem(id)) continue;
       const level = levelOf(id);
       const status = upgradeStatus(id);
       const power = `火力+${Math.round(DAMAGE_PER_LEVEL * (level - 1) * 100)}%`;
-      const next = status.max
-        ? 'これ以上は上がらない（最大）'
-        : UPGRADES[id].levels[level].desc;
+      const next = status.max ? 'これ以上は上がらない（最大）' : UPGRADES[id].levels[level].desc;
       const stat = `Lv${level} / ${MAX_LEVEL}　${power}<br><span class="shop-next">次：${next}</span>`;
       const action = status.max ? 'MAX' : status.locked ? '🔒' : `🪙${status.cost}`;
 
@@ -163,7 +224,7 @@ export class Shop {
 
     const note = document.createElement('p');
     note.className = 'hint';
-    note.textContent = 'AK47のLv3はピストルをLv5にすると開放されます。ソードはまだ制作中です。';
+    note.textContent = '買っていない武器やクラスは、それぞれのお店で買うとここに出ます。ソードはまだ制作中です。';
     this.listEl.appendChild(note);
   }
 
@@ -171,6 +232,8 @@ export class Shop {
     this.titleEl.textContent = 'バトルゲート';
     this.keeperEl.textContent = '';
     this.noteEl.textContent = '合言葉を決めて出発します。同じ合言葉の人と同じ部屋になります（通信は次のステップ）。';
+
+    const job = JOBS[this.loadout.jobId];
     const form = document.createElement('div');
     form.className = 'gate-form';
     form.innerHTML = `
@@ -180,7 +243,7 @@ export class Shop {
         <button id="gate-random" class="ghost" type="button">ランダム</button>
       </div>
       <div class="gate-summary">
-        <span>${JOBS[this.loadout.jobId].name}</span>
+        <span>${job.name} Lv${classLevelOf(job.id)}</span>
         <span>${this.loadout.items.map((id) => `${ITEMS[id].name} Lv${levelOf(id)}`).join('　')}</span>
       </div>
       <button id="gate-go" class="primary" type="button">バトルに出発する</button>`;
@@ -204,14 +267,20 @@ export function randomPass() {
   return WORDS[Math.floor(Math.random() * WORDS.length)] + Math.floor(10 + Math.random() * 90);
 }
 
-// 職業専用アイテムは、その職業のときだけ持たせる
+// 職業専用アイテムは、その職業のときだけ持たせる。持っていない武器も外す
 export function syncJobItems(loadout) {
-  loadout.items = loadout.items.filter((id) => !ITEMS[id].jobOnly || ITEMS[id].jobOnly === loadout.jobId);
+  const slots = maxSlots(loadout.jobId);
+  loadout.items = loadout.items.filter((id) => {
+    if (ITEMS[id].jobOnly) return ITEMS[id].jobOnly === loadout.jobId;
+    return ownsItem(id);
+  });
   for (const id of SELECTABLE_ITEMS) {
     const item = ITEMS[id];
     if (item.jobOnly === loadout.jobId && !loadout.items.includes(id)) {
-      if (loadout.items.length >= MAX_SLOTS) loadout.items.pop();
+      if (loadout.items.length >= slots) loadout.items.pop();
       loadout.items.unshift(id);
     }
   }
+  if (!loadout.items.length) loadout.items.push('shovel');
+  loadout.items = loadout.items.slice(0, slots);
 }

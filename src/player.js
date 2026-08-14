@@ -53,8 +53,9 @@ export class Player {
     this.speed = 0;
     this.time = 0;
     this.hurtAt = -99;
-    // 持っている武器のレベルでつく移動速度ボーナス
+    // 持っている武器とクラスのレベルでつくボーナス
     this.speedBonus = 0;
+    this.damageReduction = 0;
   }
 
   get invulnerable() {
@@ -126,7 +127,8 @@ export class Player {
 
   damage(amount) {
     if (this.downed || this.invulnerable) return false;
-    this.hp = Math.max(0, this.hp - amount);
+    // クラスLv4以上は受けるダメージが減る
+    this.hp = Math.max(0, this.hp - amount * (1 - this.damageReduction));
     this.invulnUntil = this.time + PLAYER.hitInvulnTime;
     this.hurtAt = this.time;
     if (this.hp === 0) {
