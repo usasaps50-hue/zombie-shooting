@@ -430,7 +430,9 @@ function damageEnemy(enemy, amount, now, source = null, by = net.id) {
     // 手ごたえだけは自分の画面ですぐ出す
     const guess = Math.min(amount, enemy.hp);
     game?.ult.add('damage', guess);
-    if (source?.effects?.lifesteal && game) game.player.heal(guess * source.effects.lifesteal);
+    if (source?.lifestealNow && source?.effects?.lifesteal && game) {
+      game.player.heal(guess * source.effects.lifesteal);
+    }
     return false;
   }
 
@@ -441,8 +443,10 @@ function damageEnemy(enemy, amount, now, source = null, by = net.id) {
   const mine = by === net.id;
   if (mine) {
     game?.ult.add('damage', dealt);
-    // Lv5のシャベル：当てたダメージの半分を吸収する
-    if (source?.effects?.lifesteal && game) game.player.heal(dealt * source.effects.lifesteal);
+    // Lv5のシャベル：ローリングスマッシュのときだけ、与ダメージの半分を吸収する
+    if (source?.lifestealNow && source?.effects?.lifesteal && game) {
+      game.player.heal(dealt * source.effects.lifesteal);
+    }
   }
 
   if (enemy.alive) return false;
@@ -521,6 +525,7 @@ function setupNet() {
 
     applyEnemies(msg.e, enemies);
     applyStructures(msg.s ?? [], { scene, builder });
+    drones.netApply(msg.d ?? []);
   });
 
   // 子から届いた「当てた」。親が本当に減らす
@@ -570,8 +575,15 @@ function setupNet() {
 
   // 他の人の必殺技。見た目はみんなの画面に出す
   net.on('ult', (msg) => {
-    const from = new THREE.Vector3(...msg.f);
-    const to = new THREE.Vector3(...msg.t);
+    const from = new THREE.Vector3(...(msg.f ?? [0, 0, 0]));
+    const to = new THREE.Vector3(...(msg.t ?? [0, 0, 0]));
+    if (msg.k === 'drones') {
+      // 子から「ドローンを出して」と頼まれた。親がその人のまわりに出す
+      if (!net.isHost) return;
+      const owner = remotes.get(msg.by);
+      if (owner) drones.spawn(owner.position, msg.by);
+      return;
+    }
     sfx.playAt('ultimate', from, { volume: 0.7 });
     if (msg.k === 'bomb') projectiles.bomb(from, to);
     else if (msg.k === 'rocket') projectiles.rocket(from, to);
@@ -639,7 +651,7 @@ function placeNetStructure(typeId, position, yaw) {
 
 // 親が送る、いまの世界のようす
 function sendWorld() {
-  const packed = packWorld(enemies, builder.structures, waves, structureKey);
+  const packed = packWorld(enemies, builder.structures, waves, structureKey, drones);
   structureKey = packed.nextKey;
   net.send('w', packed.msg);
 }
@@ -728,11 +740,12 @@ function shoot(item) {
 const BEAM_SOURCE = { kind: 'gun', effects: {} };
 
 // タレットやドローンの射撃。銃口の爆発と弾道は他の人からも見える
-function beamShot(shooter, target, damage, now) {
+function beamShot(shooter, target, damage, now, kind = 'turret') {
   const from = shooter.muzzle();
   const to = target.position.clone().setY(1.0);
   effects.muzzleFlash(from, to.clone().sub(from).normalize());
   effects.tracer(from, to);
+  sfx.playAt(kind, from, { volume: 0.55 });
   damageEnemy(target, damage, now, BEAM_SOURCE);
 }
 
@@ -822,7 +835,8 @@ const ULT_ACTIONS = {
   architect: () => {
     const roll = Math.random();
     if (roll < GOD_TURRET_ODDS.drones) {
-      drones.spawn(game.player.position);
+      if (net.online && !net.isHost) net.send('ult', { k: 'drones', by: net.id });
+      else drones.spawn(game.player.position, net.id);
       hud.setToast(`${ULTIMATES.architect.name}：ドローン${DRONE.count}機！（いま${drones.count}／${DRONE.max}機）`, 2.4);
       return true;
     }
@@ -929,7 +943,8 @@ function useSkill() {
     if (!enemy.alive) continue;
     const to = enemy.position.clone().sub(origin).setY(0);
     if (to.length() > range) continue;
-    damageEnemy(enemy, damage, now, item);
+    // この技のときだけ吸収が乗る（通常の振りでは回復しない）
+    damageEnemy(enemy, damage, now, { ...item, lifestealNow: true });
     enemy.knockback(to.normalize(), SHOVEL_KNOCKBACK);
   }
   sfx.play('swing');
@@ -1165,6 +1180,7 @@ function frame() {
       hud.setToast(`${enemy.def.name}が跳ぶ構え！ 印から離れろ`, 2.0);
     },
     onShoot: (enemy, kind, damage, target) => enemyShoot(enemy, kind, damage, target, now),
+    onSwing: (enemy) => sfx.playAt('zswing', enemy.position),
     onBurrow: (enemy, phase) => {
       effects.dirtBurst(enemy.position, phase === 'out');
       sfx.playAt('dig', enemy.position);
@@ -1225,7 +1241,13 @@ function frame() {
   });
 
   // ゾンビ側の弾と矢。親だけが当たり判定をして、当たった人に知らせる
-  enemyShots.update(dt, simulating ? targets : [], colliders, (damage, point, target) => {
+  enemyShots.update(dt, simulating ? shotTargets(targets) : [], colliders, (damage, point, target) => {
+    if (target.drone) {
+      // ガンマの弾と弓スケルトンの矢は、ドローンを撃ち落とせる
+      target.drone.damage(target.droneDamage ?? damage);
+      effects.headshot(point);
+      return;
+    }
     if (target.local) {
       effects.headshot(point);
       applyDamage(damage);
@@ -1244,7 +1266,12 @@ function frame() {
     weapons.update(dt);
 
     ult.tick(dt);
-    drones.update(dt, player.position, enemies, (drone, target) => beamShot(drone, target, DRONE.damage, now));
+    // 親（かオフライン）だけがドローンを動かす。子は届いた位置になじませるだけ
+    if (simulating) {
+      drones.update(dt, droneAnchor, enemies, (drone, target) => beamShot(drone, target, DRONE.damage, now, 'drone'));
+    } else {
+      drones.netUpdate(dt);
+    }
 
     game.spin = Math.max(0, game.spin - dt);
 
@@ -1380,6 +1407,32 @@ function takeOverAsHost() {
 // HUDに出すウェーブの情報。子は親から届いたものを使う
 function waveInfo() {
   return net.online && !net.isHost ? netWaves : waves;
+}
+
+// ゾンビの弾が当たる相手。人にドローンを足したもの
+function shotTargets(players) {
+  const list = [...players];
+  for (const drone of drones.list) {
+    if (!drone.alive) continue;
+    list.push({
+      id: `drone${drone.ownerId ?? ''}`,
+      position: drone.root.position,
+      drone,
+      droneDamage: 8,
+      radius: 0.7,
+      drop: 0,
+    });
+  }
+  return list;
+}
+
+// ドローンが回る中心。持ち主の居場所を返す
+function droneAnchor(ownerId) {
+  if (!ownerId || ownerId === net.id) {
+    return game && !game.player.downed ? game.player.position : null;
+  }
+  const remote = remotes.get(ownerId);
+  return remote && !remote.downed ? remote.position : null;
 }
 
 // ゾンビが狙う相手を集める。自分＋つながっている人

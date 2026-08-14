@@ -23,9 +23,16 @@ export const UPGRADES = {
       { desc: '基本性能（弾24発／0.3秒に1発／音が大きい）' },
       { cost: 150, fireInterval: 0.2, reloadTime: 4.5, desc: '0.2秒に1発／リロード4.5秒' },
       // ピストルをLv5にするまで開放されない
-      { cost: 400, needs: { pistol: 5 }, desc: '火力+10%（ピストルLv5で開放）' },
+      { cost: 400, needs: { pistol: 5 }, damageScale: 1.1, desc: '火力+10%（ピストルLv5で開放）' },
       { cost: 700, magazine: 40, silencer: 10, desc: 'サイレンサーが付く／弾40発' },
-      { cost: 1000, magazine: 48, fireInterval: 0.1, gold: true, desc: '見た目が金色／弾48発／0.1秒に1発' },
+      {
+        cost: 1000,
+        magazine: 72,
+        fireInterval: 0.05,
+        damage: 4,
+        gold: true,
+        desc: '見た目が金色／1発4ダメージ／弾72発／0.05秒に1発',
+      },
     ],
   },
   shovel: {
@@ -35,7 +42,13 @@ export const UPGRADES = {
       { cost: 100, speedBonus: 0.1, desc: '持っている間だけ移動速度+10%' },
       { cost: 200, skill: 'rollingSmash', desc: 'スキル「ローリングスマッシュ」が使える' },
       { cost: 500, rangeBonus: 0.1, desc: '攻撃範囲+10%' },
-      { cost: 750, gold: true, lifesteal: 0.5, unlocks: 'sword', desc: '見た目が金色／与ダメージの半分を回復／ソードのレベル3が開放' },
+      {
+        cost: 750,
+        gold: true,
+        lifesteal: 0.5,
+        unlocks: 'sword',
+        desc: '見た目が金色／ローリングスマッシュの与ダメージの半分を回復／ソードのレベル3が開放',
+      },
     ],
   },
   megaphone: {
@@ -105,7 +118,12 @@ export function upgradedItem(itemId, level) {
   const base = ITEMS[itemId];
   const bonus = effects(itemId, level);
   const item = { ...base, level, effects: bonus };
-  if (base.damage) item.damage = Math.max(1, Math.round(base.damage * (1 + DAMAGE_PER_LEVEL * (level - 1))));
+  if (base.damage) {
+    let damage = base.damage * (1 + DAMAGE_PER_LEVEL * (level - 1));
+    if (bonus.damageScale) damage *= bonus.damageScale;
+    // レベルの効果に数字そのものの指定があれば、それで置きかえる
+    item.damage = Math.max(1, Math.round(bonus.damage ?? damage));
+  }
   if (bonus.magazine) item.magazine = bonus.magazine;
   if (bonus.fireInterval) item.fireInterval = bonus.fireInterval;
   if (bonus.reloadTime) item.reloadTime = bonus.reloadTime;

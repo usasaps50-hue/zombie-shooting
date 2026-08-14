@@ -3,7 +3,7 @@ import { Avatar } from './avatar.js';
 import { Zombie } from './zombie.js';
 import { Mutant } from './mutant.js';
 import { Skeleton } from './skeleton.js';
-import { ENEMIES, JOBS } from './data/jobs.js';
+import { ENEMIES, JOBS, BUILD_LURE } from './data/jobs.js';
 import { floorHeight, STEP_HEIGHT, EYE_HEIGHT } from './player.js';
 import { makeLabel, hpColor } from './label.js';
 
@@ -84,6 +84,23 @@ function nearestPlayer(players, from) {
     if (dist < bestDist) {
       bestDist = dist;
       best = p;
+    }
+  }
+  return best;
+}
+
+// 自分に一番近い、まだ壊れていない建物。
+// タレットは撃ち返してくるので、少し近くにあるものとして優先する
+function nearestStructure(structures, from) {
+  let best = null;
+  let bestDist = BUILD_LURE;
+  for (const s of structures) {
+    if (!s.alive) continue;
+    const shooty = s.def.kind === 'turret' || s.def.kind === 'godturret';
+    const dist = s.root.position.distanceTo(from) - (shooty ? 3 : 0);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = s;
     }
   }
   return best;
@@ -335,7 +352,7 @@ export class Enemy {
   }
 
   // 止まって腕を振り下ろし、当たる瞬間に一度だけダメージを出す
-  #attack(now, onLand) {
+  #attack(now, onLand, onSwing) {
     if (!this.attacking) {
       if (now < this.nextAttackAt) {
         this.zombie.setMode('idle');
@@ -344,6 +361,8 @@ export class Enemy {
       this.zombie.restartAttack();
       this.attacking = true;
       this.landed = false;
+      // 振りかぶった音。当たる前に鳴らして、よけられるようにする
+      onSwing?.(this);
     }
     if (!this.landed && this.zombie.attackLanded) {
       this.landed = true;
@@ -408,7 +427,7 @@ export class Enemy {
       colliders = [], structures = [], players = [],
       onHitPlayer = () => {}, onBreak = () => {}, onSlam = () => {}, slamTargets = () => [],
       onSlamAim = () => {}, onShoot = () => {}, onBurrow = () => {}, onSpot = () => {},
-      stairPoints = [],
+      onSwing = () => {}, stairPoints = [],
     } = world;
     // オンラインでは何人もいる。そのつど一番近い相手を狙う
     const player = nearestPlayer(players, this.root.position);
@@ -479,7 +498,7 @@ export class Enemy {
 
     if (this.alive && !this.thinkSkip) {
       this.#think(dt * (far ? 3 : 1), now, {
-        colliders, structures, player, onHitPlayer, onBreak, onShoot, onSpot, stairPoints,
+        colliders, structures, player, onHitPlayer, onBreak, onShoot, onSpot, onSwing, stairPoints,
       });
     }
 
@@ -608,7 +627,7 @@ export class Enemy {
 
   // 遠くから撃つ種類の動き。撃てたら true、撃てないときは false を返して
   // 普通に近づく処理へ渡す
-  #ranged(dt, now, player, colliders, structures, onShoot, onBreak) {
+  #ranged(dt, now, player, colliders, structures, onShoot, onBreak, onSwing) {
     const pos = this.root.position;
     const to = player.position.clone().sub(pos).setY(0);
     const dist = to.length();
@@ -659,7 +678,7 @@ export class Enemy {
         return true;
       }
       // まだ遠い。撃てる距離まで詰める
-      if (!this.#approach(dt, dir, colliders, structures, onBreak, now)) {
+      if (!this.#approach(dt, dir, colliders, structures, onBreak, now, onSwing)) {
         this.state = 'chase';
         this.zombie.setMode('walk');
       }
@@ -671,7 +690,7 @@ export class Enemy {
     if (near) {
       this.state = 'attack';
       this.zombie.setMode('idle');
-    } else if (!this.#approach(dt, dir, colliders, structures, onBreak, now)) {
+    } else if (!this.#approach(dt, dir, colliders, structures, onBreak, now, onSwing)) {
       this.state = 'chase';
       this.zombie.setMode('walk');
     }
@@ -685,14 +704,14 @@ export class Enemy {
   }
 
   // 相手のほうへ1歩進む。人工の壁にぶつかったら壊しにかかる（true を返す）
-  #approach(dt, dir, colliders, structures, onBreak, now) {
+  #approach(dt, dir, colliders, structures, onBreak, now, onSwing) {
     const speed = this.def.chaseSpeed * dt;
     const wall = this.#advance(dir.x, dir.z, speed, colliders, structures);
     if (!wall) return false;
     this.state = 'break';
     const pos = this.root.position;
     this.#face(Math.atan2(-(wall.root.position.x - pos.x), -(wall.root.position.z - pos.z)), dt);
-    this.#attack(now, () => onBreak(this, wall, this.def.structureDamage));
+    this.#attack(now, () => onBreak(this, wall, this.def.structureDamage), onSwing);
     return true;
   }
 
@@ -723,7 +742,7 @@ export class Enemy {
 
   #think(dt, now, ctx) {
     const {
-      colliders, structures, player, onHitPlayer, onBreak, onShoot, onSpot, stairPoints,
+      colliders, structures, player, onHitPlayer, onBreak, onShoot, onSpot, onSwing, stairPoints,
     } = ctx;
     if (this.zombie.mode === 'hit') return;
     const pos = this.root.position;
@@ -759,9 +778,31 @@ export class Enemy {
     // 撃ってくる種類は、まず遠くから撃てないか試す
     if (sees && (this.def.behavior === 'gunner' || this.def.behavior === 'archer')) {
       this.attacking = false;
-      if (this.#ranged(dt, now, player, colliders, structures, onShoot, onBreak)) return;
+      if (this.#ranged(dt, now, player, colliders, structures, onShoot, onBreak, onSwing)) return;
     } else {
       this.#setAiming(false);
+    }
+
+    // 人より近くに建物があれば、そちらを先に壊す。
+    // タレットに背を向けて走り抜けると、ずっと撃たれ続けてしまうため
+    const build = nearestStructure(structures, pos);
+    if (build) {
+      const toBuild = build.root.position.clone().sub(pos).setY(0);
+      const buildDist = toBuild.length();
+      const playerDist = sees ? pos.distanceTo(player.position) : Infinity;
+      if (buildDist < playerDist) {
+        this.state = 'break';
+        this.#face(Math.atan2(-toBuild.x, -toBuild.z), dt);
+        if (buildDist <= this.def.reach + 1.0) {
+          this.#attack(now, () => onBreak(this, build, this.def.structureDamage), onSwing);
+        } else {
+          this.attacking = false;
+          this.zombie.setMode('walk');
+          const dir = toBuild.divideScalar(buildDist || 1);
+          this.#approach(dt, dir, colliders, structures, onBreak, now, onSwing);
+        }
+        return;
+      }
     }
 
     // 見えていれば本人、聞こえただけなら音のした場所を目指す
@@ -789,13 +830,13 @@ export class Enemy {
     // 目の前にいるなら止まって殴る
     if (canAttack && dist <= this.def.reach) {
       this.state = 'attack';
-      this.#attack(now, () => onHitPlayer(this, this.def.damage, player));
+      this.#attack(now, () => onHitPlayer(this, this.def.damage, player), onSwing);
       return;
     }
 
     const dir = to.divideScalar(dist || 1);
     // 人工の壁は避けずに壊して進む。階段へ向かう途中でも同じ
-    if (this.#approach(dt, dir, colliders, structures, onBreak, now)) return;
+    if (this.#approach(dt, dir, colliders, structures, onBreak, now, onSwing)) return;
 
     if (this.state !== 'climb') this.state = sees ? 'chase' : 'alert';
     this.attacking = false;

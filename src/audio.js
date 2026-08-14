@@ -23,7 +23,13 @@ class Sfx {
   }
 
   get ready() {
-    return !!this.ctx && this.ctx.state === 'running';
+    if (!this.ctx) return false;
+    // ブラウザの都合で止められることがある。気づいたら起こす
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume();
+      return false;
+    }
+    return this.ctx.state === 'running';
   }
 
   // 最初のユーザー操作で呼ぶ。2回目以降は何もしない
@@ -36,14 +42,14 @@ class Sfx {
     if (!Ctx) return;
     this.ctx = new Ctx();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.5;
+    this.master.gain.value = 0.8;
     this.master.connect(this.ctx.destination);
     this.#buildNoise();
   }
 
   toggleMute() {
     this.muted = !this.muted;
-    if (this.master) this.master.gain.value = this.muted ? 0 : 0.5;
+    if (this.master) this.master.gain.value = this.muted ? 0 : 0.8;
     return this.muted;
   }
 
@@ -173,6 +179,17 @@ class Sfx {
         this.#tone('sine', 2400, 1200, at, 0.24, gain);
         break;
 
+      // タレットとドローン
+      case 'turret':
+        this.#env(gain, at, 0.002, 0.09, 0.5 * v);
+        this.#tone('square', 900, 300, at, 0.07, gain);
+        this.#noiseSource(at, 0.07, gain, { type: 'highpass', from: 2000 });
+        break;
+      case 'drone':
+        this.#env(gain, at, 0.002, 0.1, 0.45 * v);
+        this.#tone('sawtooth', 1300, 500, at, 0.09, gain);
+        break;
+
       // ゾンビ
       case 'growl': {
         this.#env(gain, at, 0.06, 0.5, 0.5 * v);
@@ -188,6 +205,12 @@ class Sfx {
         this.#noiseSource(at, 0.5, gain, { type: 'bandpass', from: 380, to: 200, q: 1.2 });
         break;
       }
+      // ゾンビが腕を振りかぶる音。当たる前に気づけるようにする
+      case 'zswing':
+        this.#env(gain, at, 0.02, 0.22, 0.55 * v);
+        this.#noiseSource(at, 0.24, gain, { type: 'bandpass', from: 400, to: 1500, q: 0.9 });
+        this.#tone('sawtooth', 120, 70, at, 0.2, gain);
+        break;
       case 'die':
         this.#env(gain, at, 0.03, 0.75, 0.6 * v);
         this.#tone('sawtooth', 150, 40, at, 0.7, gain);
@@ -239,22 +262,25 @@ class Sfx {
 
       // 拡声器
       case 'megaphone': {
-        // 「ピーッ」というハウリングのあと、力の湧く和音が鳴る
-        this.#env(gain, at, 0.01, 0.18, 0.5 * v);
-        this.#tone('square', 1800, 1200, at, 0.16, gain);
-        const chord = [392, 494, 587, 784];
+        // 「ピーッ」というハウリングのあと、力の湧くファンファーレが鳴る。
+        // 使ったことが必ず分かるよう、長めで大きめにしてある
+        this.#env(gain, at, 0.008, 0.3, 1.0 * v);
+        this.#tone('square', 2100, 1100, at, 0.28, gain);
+        this.#noiseSource(at, 0.12, gain, { type: 'bandpass', from: 2600, q: 3 });
+        const chord = [392, 523, 659, 784, 1047];
         chord.forEach((f, i) => {
-          const t = at + 0.16 + i * 0.05;
-          this.#env(gain, t, 0.015, 0.5, 0.34 * v);
-          this.#tone('square', f, f * 1.5, t, 0.45, gain);
+          const t = at + 0.24 + i * 0.07;
+          this.#env(gain, t, 0.012, 0.75, 0.62 * v);
+          this.#tone('square', f, f, t, 0.7, gain);
+          this.#tone('triangle', f * 2, f * 2, t, 0.5, gain);
         });
         break;
       }
       case 'buffed':
-        for (let i = 0; i < 4; i++) {
-          const t = at + i * 0.06;
-          this.#env(gain, t, 0.01, 0.32, 0.3 * v);
-          this.#tone('triangle', 520 + i * 180, 780 + i * 180, t, 0.3, gain);
+        for (let i = 0; i < 5; i++) {
+          const t = at + i * 0.07;
+          this.#env(gain, t, 0.01, 0.45, 0.55 * v);
+          this.#tone('triangle', 520 + i * 190, 780 + i * 190, t, 0.42, gain);
         }
         break;
 

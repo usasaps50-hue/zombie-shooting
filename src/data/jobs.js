@@ -44,6 +44,9 @@ export const PLAYER = {
   hurtTime: 0.5,
 };
 
+// ゾンビが「人より近い建物」を壊しに行く距離
+export const BUILD_LURE = 11;
+
 // drop は [最小, 最大]。倒したときにこの範囲で素材を落とす
 const NORMAL_ZOMBIE = {
   id: 'normal',
@@ -130,6 +133,9 @@ const GAMMA_ZOMBIE = {
   shootCooldown: [1.5, 3.0],
   spread: 0.045,
   lockOn: true,
+  // 弾はドローンにも当たる
+  breaksDrones: true,
+  droneDamage: 10,
   // 見つけた相手の位置を仲間に知らせる
   shares: true,
   avoidsWalls: true,
@@ -171,6 +177,9 @@ const SKELETON_ARCHER = {
   sight: 26,
   keepRange: 15,
   shootRange: 26,
+  // 矢はドローンにも当たる
+  breaksDrones: true,
+  droneDamage: 6,
   shootCooldown: [1.8, 3.2],
   spread: 0.03,
   avoidsWalls: true,

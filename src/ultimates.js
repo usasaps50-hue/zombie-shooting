@@ -112,7 +112,9 @@ export class Projectiles {
 }
 
 class Drone {
-  constructor(scene, index) {
+  constructor(scene, index, ownerId = null) {
+    // 誰の必殺技で出たドローンか。その人のまわりを回る
+    this.ownerId = ownerId;
     this.hp = DRONE.hp;
     // 1回ぶんの3機で円を三等分し、次に呼んだ3機はその隙間に入る
     const batch = Math.floor(index / DRONE.count);
@@ -218,16 +220,18 @@ export class Drones {
   }
 
   // 呼ぶたびに増える。上限を超えたぶんは、古い機から順に消える
-  spawn(position) {
+  spawn(position, ownerId = null) {
     for (let i = 0; i < DRONE.count; i++) {
       if (this.list.length >= DRONE.max) this.list.shift().dispose(this.scene);
-      const drone = new Drone(this.scene, this.spawned++);
+      const drone = new Drone(this.scene, this.spawned++, ownerId);
       drone.root.position.set(position.x, DRONE.height, position.z);
       this.list.push(drone);
     }
   }
 
-  update(dt, anchor, enemies, onShoot) {
+  // anchorOf(ownerId) は、その持ち主の足元の位置を返す関数。
+  // オンラインでは他の人のドローンも動かすので、持ち主ごとに聞く
+  update(dt, anchorOf, enemies, onShoot) {
     for (let i = this.list.length - 1; i >= 0; i--) {
       const drone = this.list[i];
       if (!drone.alive) {
@@ -235,6 +239,9 @@ export class Drones {
         this.list.splice(i, 1);
         continue;
       }
+      const anchor = anchorOf(drone.ownerId);
+      // 持ち主がいなくなったドローンは、その場に浮いたままにする
+      if (!anchor) continue;
       let target = null;
       let best = DRONE.range;
       for (const e of enemies) {
@@ -246,6 +253,49 @@ export class Drones {
         }
       }
       drone.update(dt, anchor, target, onShoot);
+    }
+  }
+
+  // 親が送る一覧。子はこれで同じドローンを出す
+  netPack() {
+    return this.list
+      .filter((d) => d.alive)
+      .map((d, i) => [
+        i,
+        Math.round(d.root.position.x * 100) / 100,
+        Math.round(d.root.position.y * 100) / 100,
+        Math.round(d.root.position.z * 100) / 100,
+        Math.round(d.root.rotation.y * 100) / 100,
+        Math.ceil(d.hp),
+      ]);
+  }
+
+  // 子の側。届いた数に合わせて出したり消したりして、位置をなじませる
+  netApply(rows) {
+    while (this.list.length > rows.length) this.list.pop().dispose(this.scene);
+    while (this.list.length < rows.length) {
+      this.list.push(new Drone(this.scene, this.spawned++));
+    }
+    rows.forEach((row, i) => {
+      const drone = this.list[i];
+      drone.netTarget ??= new THREE.Vector3();
+      drone.netTarget.set(row[1], row[2], row[3]);
+      drone.netYaw = row[4];
+      if (!drone.netPlaced) {
+        drone.netPlaced = true;
+        drone.root.position.copy(drone.netTarget);
+      }
+      drone.damage(Math.max(0, drone.hp - row[5]));
+    });
+  }
+
+  // 子の毎フレーム。撃たせず、見た目だけ動かす
+  netUpdate(dt) {
+    for (const drone of this.list) {
+      for (const r of drone.rotors) r.rotation.y += dt * 40;
+      if (!drone.netTarget) continue;
+      drone.root.position.lerp(drone.netTarget, Math.min(dt * 12, 1));
+      drone.root.rotation.y = drone.netYaw;
     }
   }
 

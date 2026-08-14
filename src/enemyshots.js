@@ -132,7 +132,8 @@ export class EnemyShots {
     this.list.splice(index, 1);
   }
 
-  // targets は当たり判定をする相手の一覧（{ id, position }）。
+  // targets は当たり判定をする相手の一覧（{ id, position, radius }）。
+  // プレイヤーだけでなくドローンも混ぜられる。
   // 空にすると誰にも当たらない＝見た目だけの弾になる（子の画面で使う）
   update(dt, targets, colliders, onHit) {
     for (let i = this.list.length - 1; i >= 0; i--) {
@@ -152,8 +153,9 @@ export class EnemyShots {
       for (const target of targets) {
         if (!target || target.downed) continue;
         // 胸のあたりを狙う。1フレームで通り過ぎても、線分で見れば当たる
-        tmpChest.copy(target.position).setY(target.position.y - 0.35);
-        if (distanceToSegment(shot.prev, shot.mesh.position, tmpChest) > HIT_RADIUS) continue;
+        tmpChest.copy(target.position).setY(target.position.y - (target.drop ?? 0.35));
+        const reach = target.radius ?? HIT_RADIUS;
+        if (distanceToSegment(shot.prev, shot.mesh.position, tmpChest) > reach) continue;
         onHit(shot.damage, shot.mesh.position.clone(), target);
         hitSomeone = true;
         break;
