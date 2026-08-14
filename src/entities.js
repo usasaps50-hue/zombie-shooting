@@ -3,7 +3,7 @@ import { Avatar } from './avatar.js';
 import { Zombie } from './zombie.js';
 import { Mutant } from './mutant.js';
 import { ENEMIES, JOBS } from './data/jobs.js';
-import { floorHeight, STEP_HEIGHT } from './player.js';
+import { floorHeight, STEP_HEIGHT, EYE_HEIGHT } from './player.js';
 import { makeLabel, hpColor } from './label.js';
 
 export class Teammate {
@@ -99,6 +99,9 @@ export class Enemy {
     this.slamUsed = false;
     this.slamT = 0;
     this.thinkSkip = 0;
+    // 銃声を聞いた場所と、そこへ向かうのをやめる時刻
+    this.alertUntil = 0;
+    this.alertSpot = new THREE.Vector3();
     this.slamFrom = new THREE.Vector3();
     this.slamTo = new THREE.Vector3();
 
@@ -136,13 +139,14 @@ export class Enemy {
     this.label.sprite.position.y = height + 0.35;
   }
 
-  // 列から取り出して、指定の種類として湧かせる
-  spawnAs(typeId, position) {
+  // 列から取り出して、指定の種類として湧かせる。
+  // hpScale はウェーブが進むほど大きくなる硬さの倍率
+  spawnAs(typeId, position, hpScale = 1) {
     if (this.def.id !== typeId) {
       this.def = ENEMIES[typeId];
-      this.maxHp = this.def.hp;
       this.#buildModel();
     }
+    this.maxHp = Math.round(this.def.hp * hpScale);
     this.home.copy(position);
     this.root.position.copy(position);
     this.root.visible = true;
@@ -187,6 +191,13 @@ export class Enemy {
       this.target = null;
     }
     return true;
+  }
+
+  // 銃声を聞いた。しばらくその場所へ向かう
+  alert(spot, now) {
+    if (!this.active || !this.alive) return;
+    this.alertSpot.copy(spot);
+    this.alertUntil = now + 8;
   }
 
   knockback(direction, power) {
@@ -283,6 +294,7 @@ export class Enemy {
     const {
       colliders = [], structures = [], player = null,
       onHitPlayer = () => {}, onBreak = () => {}, onSlam = () => {}, slamTargets = () => [],
+      stairPoints = [],
     } = world;
 
     if (this.state === 'slam') {
@@ -311,7 +323,7 @@ export class Enemy {
     this.thinkSkip = far ? (this.thinkSkip + 1) % 3 : 0;
 
     if (this.alive && !this.thinkSkip) {
-      this.#think(dt * (far ? 3 : 1), now, colliders, structures, player, onHitPlayer, onBreak);
+      this.#think(dt * (far ? 3 : 1), now, colliders, structures, player, onHitPlayer, onBreak, stairPoints);
     }
 
     // モデルは +Z が正面。facing はカメラと同じ -Z 基準なので半回転ぶんずらす
@@ -322,30 +334,69 @@ export class Enemy {
     if (!this.alive && this.zombie.deathFinished) this.retire();
   }
 
+  // 瀕死になった瞬間に1回だけ抽選する。外れた個体はもう跳ばない
   #wantsSlam() {
-    return this.def.slamAt !== undefined && !this.slamUsed && this.hp <= this.maxHp * this.def.slamAt;
+    if (this.def.slamAt === undefined || this.slamUsed) return false;
+    if (this.hp > this.maxHp * this.def.slamAt) return false;
+    this.slamUsed = true;
+    return Math.random() < this.def.slamChance;
   }
 
-  #think(dt, now, colliders, structures, player, onHitPlayer, onBreak) {
+  // 相手が自分より高いところにいるとき、上れる階段の下を探す
+  #stairTo(playerFeet, stairPoints) {
     const pos = this.root.position;
-    const chasing = player && !player.downed &&
-      pos.distanceTo(player.position) < this.def.sight;
+    let best = null;
+    let bestDist = Infinity;
+    for (const stair of stairPoints) {
+      // 自分より低い階段や、行き過ぎる階段は使わない
+      if (stair.top < pos.y + 0.6 || stair.top > playerFeet + 1.6) continue;
+      const dist = pos.distanceTo(stair.bottom);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = stair;
+      }
+    }
+    return best;
+  }
 
+  #think(dt, now, colliders, structures, player, onHitPlayer, onBreak, stairPoints) {
     if (this.zombie.mode === 'hit') return;
+    const pos = this.root.position;
 
-    if (!chasing) {
+    const sees = player && !player.downed && pos.distanceTo(player.position) < this.def.sight;
+    const hears = now < this.alertUntil;
+
+    if (!sees && !hears) {
       this.state = 'wander';
       this.attacking = false;
       this.#wander(dt, now, colliders, structures);
       return;
     }
 
-    const to = player.position.clone().sub(pos).setY(0);
+    // 見えていれば本人、聞こえただけなら音のした場所を目指す
+    let goal = sees ? player.position : this.alertSpot;
+    let canAttack = sees;
+    if (!sees && pos.distanceTo(this.alertSpot) < 2.5) this.alertUntil = 0;
+
+    // 高いところにいる相手には、まず階段の下、次に上を目指す
+    if (sees) {
+      const playerFeet = player.position.y - EYE_HEIGHT;
+      if (playerFeet - pos.y > 1.2) {
+        const stair = this.#stairTo(playerFeet, stairPoints);
+        if (stair) {
+          goal = pos.distanceTo(stair.bottom) > 2.0 ? stair.bottom : stair.top;
+          canAttack = false;
+          this.state = 'climb';
+        }
+      }
+    }
+
+    const to = goal.clone().sub(pos).setY(0);
     const dist = to.length();
     this.#face(Math.atan2(-to.x, -to.z), dt);
 
     // 目の前にいるなら止まって殴る
-    if (dist <= this.def.reach) {
+    if (canAttack && dist <= this.def.reach) {
       this.state = 'attack';
       this.#attack(now, () => onHitPlayer(this, this.def.damage));
       return;
@@ -355,7 +406,7 @@ export class Enemy {
     const speed = this.def.chaseSpeed * dt;
     const wall = this.#step(dir.x * speed, dir.z * speed, colliders, structures);
 
-    // 人工の壁は避けずに壊して進む
+    // 人工の壁は避けずに壊して進む。階段へ向かう途中でも同じ
     if (wall) {
       this.state = 'break';
       this.#face(Math.atan2(-(wall.root.position.x - pos.x), -(wall.root.position.z - pos.z)), dt);
@@ -363,7 +414,7 @@ export class Enemy {
       return;
     }
 
-    this.state = 'chase';
+    if (this.state !== 'climb') this.state = sees ? 'chase' : 'alert';
     this.attacking = false;
     this.zombie.setMode('walk');
   }

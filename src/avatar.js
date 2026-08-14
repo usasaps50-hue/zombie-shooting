@@ -172,14 +172,15 @@ export class Avatar {
     if (this.hat) this.head.add(this.hat);
   }
 
-  setItem(id, gold = false) {
-    if (this.itemId === id && this.itemGold === gold) return;
+  setItem(id, gold = false, silencer = false) {
+    if (this.itemId === id && this.itemGold === gold && this.itemSilencer === silencer) return;
     this.itemId = id;
     this.itemGold = gold;
+    this.itemSilencer = silencer;
     this.hand.clear();
     if (!id) return;
     // アバターは +Z を向いている。アイテムは銃口が -Z のまま作られているので反転させる。
-    const mesh = createItemMesh(id, gold);
+    const mesh = createItemMesh(id, gold, silencer);
     if (id === 'shovel' || id === 'hammer') {
       this.hand.rotation.x = -HOLD_ARM_X.shovel;
       mesh.scale.setScalar(0.75);

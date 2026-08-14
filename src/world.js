@@ -35,6 +35,8 @@ export function createWorld() {
   scene.add(sun);
 
   const colliders = [];
+  // ゾンビが高いところへ上がるときの道しるべ。{ bottom, top } の組
+  const stairPoints = [];
   const mat = (color, rough = 0.95) => new THREE.MeshStandardMaterial({ color, roughness: rough });
 
   // 箱を1つ置く。blocking を false にすると、通り抜けられる飾りになる
@@ -139,6 +141,13 @@ export function createWorld() {
     }
     group.updateMatrixWorld(true);
     for (const step of group.children) colliders.push(new THREE.Box3().setFromObject(step));
+
+    // 下の入口と上の出口を覚えておく。ゾンビはこれを目印に上る
+    const local = (lz, ly) => new THREE.Vector3(0, ly, lz).applyMatrix4(group.matrixWorld);
+    stairPoints.push({
+      bottom: local(1.4, 0),
+      top: local(-(steps - 1) * 0.9 - 1.2, STAIR_RISE * steps),
+    });
     return group;
   }
 
@@ -197,10 +206,45 @@ export function createWorld() {
     [-31, 30, 8, 8, 16], [-32, 8, 9, 8, 19], [-31, -5, 7, 9, 10],
     [-20, 6, 6, 6, 7], [17, 4, 6, 6, 8], [4, 20, 6, 6, 9],
   ];
+  // 窓。板を壁のすぐ外側に貼る。当たり判定はつけない
+  // 割れていない窓は空を映して明るく、割れた窓は中が見えて真っ暗
+  const windowMat = new THREE.MeshStandardMaterial({ color: 0x8fa9bd, roughness: 0.12 });
+  const brokenMat = new THREE.MeshStandardMaterial({ color: 0x14181d, roughness: 1 });
+  const windowGeo = new THREE.PlaneGeometry(0.9, 1.2);
+
+  function windows(x, z, w, d, h) {
+    // 2.5m ごとの階に、1.6m 間隔で窓を並べる
+    for (let floorY = 2.0; floorY < h - 1.0; floorY += 2.5) {
+      for (const [nx, nz, span] of [[0, 1, w], [0, -1, w], [1, 0, d], [-1, 0, d]]) {
+        const cols = Math.max(1, Math.floor(span / 1.6));
+        for (let i = 0; i < cols; i++) {
+          const offset = (i - (cols - 1) / 2) * 1.6;
+          // ときどき割れて真っ暗な窓にする
+          const pane = new THREE.Mesh(windowGeo, Math.random() < 0.3 ? brokenMat : windowMat);
+          pane.position.set(
+            x + nx * (d / 2 + 0.03) + (nx ? 0 : offset),
+            floorY,
+            z + nz * (d === span ? w / 2 + 0.03 : d / 2 + 0.03) + (nz ? 0 : offset)
+          );
+          if (nx) {
+            pane.position.x = x + nx * (w / 2 + 0.03);
+            pane.position.z = z + offset;
+            pane.rotation.y = nx * Math.PI / 2;
+          } else {
+            pane.position.z = z + nz * (d / 2 + 0.03);
+            pane.rotation.y = nz > 0 ? 0 : Math.PI;
+          }
+          scene.add(pane);
+        }
+      }
+    }
+  }
+
   for (const [x, z, w, d, h] of BUILDINGS) {
     if (Math.hypot(x, z) < OPEN_RADIUS + 3) continue;
     const shade = 0.5 + Math.random() * 0.2;
     addBox(x, 0, z, w, h, d, new THREE.Color().setHSL(0.08, 0.06, shade).getHex());
+    windows(x, z, w, d, h);
     // 崩れかけの上部
     addBox(x + w * 0.2, h, z - d * 0.2, w * 0.5, 1.2 + Math.random() * 2, d * 0.5, 0x5f5b56);
   }
@@ -222,5 +266,5 @@ export function createWorld() {
     scene.add(rubble);
   }
 
-  return { scene, colliders, spawns };
+  return { scene, colliders, spawns, stairPoints };
 }

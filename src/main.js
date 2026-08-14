@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createWorld } from './world.js';
 import { Input } from './input.js';
-import { Player, EYE_HEIGHT } from './player.js';
+import { Player, EYE_HEIGHT, floorHeight } from './player.js';
 import { Weapons } from './weapons.js';
 import { ViewModel } from './viewmodel.js';
 import { Hud } from './hud.js';
@@ -9,7 +9,7 @@ import { Lobby } from './lobby.js';
 import { createHub, TALK_RANGE } from './hub.js';
 import { Shop, syncJobItems, randomPass } from './shop.js';
 import { makeItemIcons } from './itemicon.js';
-import { upgradedItem, MAX_LEVEL, ROLLING_SMASH } from './data/upgrades.js';
+import { upgradedItem, MAX_LEVEL, ROLLING_SMASH, HEADSHOT } from './data/upgrades.js';
 import { Waves } from './waves.js';
 import { WAVE } from './data/waves.js';
 import { progress, levelOf, addCoins } from './progress.js';
@@ -42,7 +42,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 300);
-const { scene, colliders, spawns } = createWorld();
+const { scene, colliders, spawns, stairPoints } = createWorld();
 scene.add(camera);
 
 const input = new Input(canvas);
@@ -90,7 +90,8 @@ const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 // HUDと店で使う武器アイコン。実際の3Dモデルを描いた画像（金色版も作っておく）
 const ITEM_ICONS = makeItemIcons([
-  'pistol', 'shovel', 'hammer', 'bandage', 'pistol:gold', 'shovel:gold',
+  'pistol', 'ak47', 'shovel', 'hammer', 'bandage',
+  'pistol:gold', 'ak47:gold', 'shovel:gold',
 ]);
 hud.setIcons(ITEM_ICONS);
 
@@ -309,10 +310,22 @@ function muzzleOrigin(dir) {
     .addScaledVector(dir, 0.95);
 }
 
+// 銃声。届いた範囲のゾンビが音のした場所へ寄ってくる
+function makeNoise(position, radius, now) {
+  if (!radius) return;
+  for (const enemy of enemies) {
+    if (enemy.active && enemy.alive && enemy.position.distanceTo(position) <= radius) {
+      enemy.alert(position, now);
+    }
+  }
+}
+
 function shoot(item) {
+  const now = performance.now() / 1000;
   const dir = camera.getWorldDirection(new THREE.Vector3());
   muzzle.position.copy(camera.position);
-  muzzle.intensity = 12;
+  // サイレンサー付きは発砲炎も控えめ
+  muzzle.intensity = item.effects?.silencer ? 4 : 12;
   raycaster.set(camera.position, dir);
   raycaster.far = item.range;
   const hitboxes = enemies.filter((e) => e.alive).map((e) => e.hitbox);
@@ -321,11 +334,17 @@ function shoot(item) {
   const from = muzzleOrigin(dir);
   effects.muzzleFlash(from, dir);
   effects.tracer(from, end);
-  if (hit) {
-    const enemy = enemies.find((e) => e.hitbox === hit.object);
-    if (!damageEnemy(enemy, item.damage, performance.now() / 1000, item)) {
-      hud.setToast(`ヒット -${item.damage}`, 0.8);
-    }
+  makeNoise(camera.position.clone(), item.noise ?? 0, now);
+
+  if (!hit) return;
+  const enemy = enemies.find((e) => e.hitbox === hit.object);
+  // 当たった高さが頭の位置なら、ヘッドショット
+  const head = hit.point.y - enemy.position.y >= enemy.def.height * HEADSHOT.from;
+  const damage = head ? Math.round(item.damage * HEADSHOT.multiplier) : item.damage;
+  if (head) effects.headshot(hit.point);
+  // 倒したときの表示は damageEnemy 側が出す
+  if (!damageEnemy(enemy, damage, now, item)) {
+    hud.setToast(head ? `ヘッドショット！ -${damage}` : `ヒット -${damage}`, 0.8);
   }
 }
 
@@ -366,6 +385,9 @@ function nearestEnemy(from) {
 function placeUltStructure(typeId, distance) {
   const dir = camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize();
   const spot = new THREE.Vector3(game.player.position.x, 0, game.player.position.z).addScaledVector(dir, distance);
+  // 高台の上で使ったら、その床の上に置く
+  const feet = game.player.position.y - EYE_HEIGHT;
+  spot.y = floorHeight(colliders, spot.x, spot.z, feet + 0.4);
   const structure = createStructure(typeId, spot, Math.atan2(-dir.x, -dir.z));
   scene.add(structure.root);
   structure.root.updateMatrixWorld(true);
@@ -448,6 +470,8 @@ function swing(item) {
   const origin = camera.position;
   const flat = camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize();
   effects.swingArc(new THREE.Vector3(origin.x, 1.1, origin.z), game.player.yaw, item.range, item.arc);
+  // シャベルはほとんど音がしないので、すぐ近くにしか気づかれない
+  makeNoise(origin.clone(), item.noise ?? 0, performance.now() / 1000);
 
   let hits = 0;
   for (const enemy of enemies) {
@@ -700,6 +724,7 @@ function frame() {
     },
     onSlam: (enemy, damage, radius) => slam(enemy, damage, radius, now),
     slamTargets,
+    stairPoints,
   };
   if (game && !paused) waves.update(dt);
   for (const e of enemies) e.update(dt, now, world);
@@ -735,14 +760,16 @@ function frame() {
     player.speedBonus = weapons.current?.effects?.speedBonus ?? 0;
 
     const held = player.downed ? null : weapons.current?.id ?? null;
-    viewModel.setItem(held, held ? levelOf(held) >= MAX_LEVEL : false);
+    const heldGold = held ? levelOf(held) >= MAX_LEVEL : false;
+    const heldSilencer = !!weapons.current?.effects?.silencer;
+    viewModel.setItem(held, heldGold, heldSilencer);
     const anim = weapons.animProgress();
 
     if (weapons.current?.kind === 'build' && !player.downed) builder.aim(camera, player.position);
     else builder.hideGhost();
     viewModel.update(dt, anim, Math.min(player.speed / 4.5, 1));
 
-    teammates[0].avatar.setItem(held, held ? levelOf(held) >= MAX_LEVEL : false);
+    teammates[0].avatar.setItem(held, heldGold, heldSilencer);
     teammates[0].update(dt, { itemId: held, anim: spinAnim() ?? hurtAnim(player) ?? anim });
     teammates[1].update(dt, { itemId: null, anim: { name: 'idle', t: 0 } });
 

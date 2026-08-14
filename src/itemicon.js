@@ -4,6 +4,7 @@ import { createItemMesh } from './viewmodel.js';
 // アイコンとして一番それらしく見える角度。銃は横向き、柄物は斜めに立てる
 const POSE = {
   pistol: [0.18, -Math.PI / 2 - 0.35, 0],
+  ak47: [0.16, -Math.PI / 2 - 0.3, 0],
   shovel: [0.1, 0.5, 0.7],
   hammer: [0.1, 0.5, 0.7],
   bandage: [0.5, 0.4, 0],
@@ -36,7 +37,7 @@ export function makeItemIcons(ids, size = 96) {
   // "pistol:gold" のように書くと、レベル5の金色版を描く
   for (const key of ids) {
     const [id, variant] = key.split(':');
-    const mesh = createItemMesh(id, variant === 'gold');
+    const mesh = createItemMesh(id, variant === 'gold', variant === 'silencer' || variant === 'gold');
     mesh.rotation.set(...(POSE[id] ?? [0.2, 0.6, 0]));
     scene.add(mesh);
     mesh.updateMatrixWorld(true);

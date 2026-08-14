@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { BUILDS, BUILD_ORDER, MATERIALS, WALL_SIZE } from './data/builds.js';
 import { createGhost, createStructure, overlaps, costText } from './structures.js';
+import { floorHeight, EYE_HEIGHT } from './player.js';
 
 const PLACE_DISTANCE = 3.4;
 const GRID = 1.2;
@@ -72,7 +73,11 @@ export class Builder {
     }
     const dir = camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize();
     const spot = playerPosition.clone().addScaledVector(dir, PLACE_DISTANCE);
-    this.ghostPos.set(Math.round(spot.x / GRID) * GRID, 0, Math.round(spot.z / GRID) * GRID);
+    const x = Math.round(spot.x / GRID) * GRID;
+    const z = Math.round(spot.z / GRID) * GRID;
+    // 高台の上にも建てられるよう、その場所の床の高さに合わせる
+    const feet = playerPosition.y - EYE_HEIGHT;
+    this.ghostPos.set(x, floorHeight(this.colliders, x, z, feet + 0.4), z);
     this.ghostYaw = snapYaw(Math.atan2(-dir.x, -dir.z));
 
     this.ghost.position.copy(this.ghostPos);
@@ -81,7 +86,7 @@ export class Builder {
 
     const box = new THREE.Box3().setFromObject(this.ghost);
     const blocked = overlaps(box, this.colliders, this.structures);
-    const tooClose = this.ghostPos.distanceTo(new THREE.Vector3(playerPosition.x, 0, playerPosition.z)) < 1.2;
+    const tooClose = Math.hypot(this.ghostPos.x - playerPosition.x, this.ghostPos.z - playerPosition.z) < 1.2;
     this.ghostValid = !blocked && !tooClose && this.canAfford();
 
     const color = this.ghostValid ? 0x7fffa0 : 0xff6b6b;

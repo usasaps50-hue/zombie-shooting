@@ -92,8 +92,9 @@ const MUTANT = {
   breaksDrones: true,
   droneDamage: 20,
   crackRadius: 2.6,
-  // HPがこの割合を下回ると、密集地点へ一度だけ大ジャンプする
+  // HPがこの割合を下回ったとき、この確率で一度だけ大ジャンプする
   slamAt: 0.2,
+  slamChance: 0.1,
   slamDamage: 50,
   slamRadius: 5.0,
   slamRange: 26,

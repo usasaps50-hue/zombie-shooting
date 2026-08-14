@@ -9,9 +9,14 @@ export const WAVE = {
   clearCoins: 10,
 };
 
-// 1→15体、2→30体、10→200体になる式
+// 1ウェーブ5体から、1ウェーブごとに5体ずつ増える
 export function waveCount(wave) {
-  return Math.round(15 * wave + 0.7 * (wave - 1) * (wave - 2));
+  return 5 * wave;
+}
+
+// 5ウェーブごとに、ゾンビのHPが元の50%ずつ増える
+export function hpScale(wave) {
+  return 1 + 0.5 * Math.floor(wave / 5);
 }
 
 // 上から順に強くなる並び。from はそのゾンビが出はじめるウェーブ。

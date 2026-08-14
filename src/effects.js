@@ -79,6 +79,20 @@ export class Effects {
     this.#add(group, 0.45, 0.9, 1.6);
   }
 
+  // ヘッドショット。当たった場所で光の粒がはじける
+  headshot(position) {
+    const group = new THREE.Group();
+    group.position.copy(position);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffe27a, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    });
+    group.add(new THREE.Mesh(this.flashCoreGeo, mat));
+    const ring = new THREE.Mesh(this.flashRingGeo, mat);
+    ring.lookAt(0, 1, 0);
+    group.add(ring);
+    this.#add(group, 0.3, 1, 4);
+  }
+
   // 地割れ。放射状のヒビと砂ぼこりが同時に広がる
   groundCrack(position, radius) {
     const flat = (geometry, color) => {

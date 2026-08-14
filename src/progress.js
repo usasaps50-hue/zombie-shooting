@@ -1,4 +1,4 @@
-import { UPGRADES, MAX_LEVEL, levelCost } from './data/upgrades.js';
+import { UPGRADES, MAX_LEVEL, levelCost, requirement } from './data/upgrades.js';
 
 const KEY = 'zombie-shooting-progress';
 
@@ -47,12 +47,23 @@ export function upgradeStatus(itemId) {
   const level = levelOf(itemId);
   if (level >= MAX_LEVEL) return { max: true };
   const cost = levelCost(itemId, level + 1);
-  return { max: false, next: level + 1, cost, afford: progress.coins >= cost };
+  // 他の武器を育てないと開放されないレベルがある
+  const needs = requirement(itemId, level + 1);
+  const locked = needs
+    ? Object.entries(needs).find(([id, lv]) => levelOf(id) < lv)
+    : null;
+  return {
+    max: false,
+    next: level + 1,
+    cost,
+    afford: progress.coins >= cost,
+    locked: locked ? { id: locked[0], level: locked[1] } : null,
+  };
 }
 
 export function upgrade(itemId) {
   const status = upgradeStatus(itemId);
-  if (status.max || !status.afford) return false;
+  if (status.max || status.locked || !status.afford) return false;
   progress.coins -= status.cost;
   progress.levels[itemId] = status.next;
   save();

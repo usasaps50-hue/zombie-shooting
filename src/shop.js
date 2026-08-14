@@ -76,6 +76,7 @@ export class Shop {
   #icon(id) {
     const gold = levelOf(id) >= MAX_LEVEL;
     const src = this.icons[gold ? `${id}:gold` : id] ?? this.icons[id];
+    // アイテムショップの一覧に合わせて、共通のふるまいにしておく
     return src
       ? `<img class="shop-icon" src="${src}" alt="">`
       : `<span class="shop-emoji">${ITEMS[id].icon}</span>`;
@@ -141,10 +142,14 @@ export class Shop {
         ? 'これ以上は上がらない（最大）'
         : UPGRADES[id].levels[level].desc;
       const stat = `Lv${level} / ${MAX_LEVEL}　${power}<br><span class="shop-next">次：${next}</span>`;
-      const action = status.max ? 'MAX' : `🪙${status.cost}`;
+      const action = status.max ? 'MAX' : status.locked ? '🔒' : `🪙${status.cost}`;
 
       const row = this.#row(false, this.#icon(id), ITEMS[id].name, stat, action, () => {
         if (status.max) return;
+        if (status.locked) {
+          this.noteEl.textContent = `それには ${ITEMS[status.locked.id].name} を Lv${status.locked.level} にしないとね。`;
+          return;
+        }
         if (!upgrade(id)) {
           this.noteEl.textContent = `コインが ${status.cost - progress.coins} 枚たりないよ。`;
           return;
@@ -153,12 +158,12 @@ export class Shop {
         this.render();
         this.onChange();
       });
-      if (!status.max && !status.afford) row.classList.add('cant');
+      if (!status.max && (status.locked || !status.afford)) row.classList.add('cant');
     }
 
     const note = document.createElement('p');
     note.className = 'hint';
-    note.textContent = 'AK47とソードは、それぞれピストル・シャベルをLv5にすると開放される予定です（まだ制作中）。';
+    note.textContent = 'AK47のLv3はピストルをLv5にすると開放されます。ソードはまだ制作中です。';
     this.listEl.appendChild(note);
   }
 

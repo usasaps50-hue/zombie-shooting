@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WAVE, waveCount, pickType } from './data/waves.js';
+import { WAVE, waveCount, pickType, hpScale } from './data/waves.js';
 
 // ウェーブの進行役。決まった数を小分けに湧かせて、全部倒したら次へ進む
 export class Waves {
@@ -57,7 +57,7 @@ export class Waves {
         0,
         mouth.z + (mouth.z ? 0 : spread)
       );
-      enemy.spawnAs(pickType(this.wave), spot);
+      enemy.spawnAs(pickType(this.wave), spot, hpScale(this.wave));
       this.left--;
     }
   }

@@ -5,11 +5,41 @@ const phase = (t, a, b) => THREE.MathUtils.clamp((t - a) / (b - a), 0, 1);
 
 const GOLD = new THREE.Color(0xe0b23c);
 
-export function createItemMesh(id, gold = false) {
+export function createItemMesh(id, gold = false, silencer = false) {
   const g = new THREE.Group();
   const mat = (color, rough = 0.6) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0.2 });
 
-  if (id === 'pistol') {
+  if (id === 'ak47') {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.1, 0.5), mat(0x3a3f47));
+    body.position.set(0, 0, -0.05);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.42), mat(0x5a6069, 0.35));
+    rail.position.set(0, 0.075, -0.12);
+    rail.name = 'slide';
+    const wood = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.09, 0.22), mat(0x7a5433, 0.9));
+    wood.position.set(0, -0.01, -0.34);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.3, 8), mat(0x22262b, 0.3));
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, 0.045, -0.56);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.11, 0.28), mat(0x7a5433, 0.9));
+    stock.position.set(0, -0.04, 0.32);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.19, 0.08), mat(0x4a3b30, 0.9));
+    grip.position.set(0, -0.14, 0.06);
+    grip.rotation.x = -0.25;
+    // 弧を描いた特徴的なマガジン
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.24, 0.1), mat(0x5c4a2e, 0.7));
+    mag.position.set(0, -0.17, -0.12);
+    mag.rotation.x = 0.35;
+    mag.name = 'magazine';
+    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.035, 0.02), mat(0x1c1f24));
+    sight.position.set(0, 0.115, -0.4);
+    g.add(body, rail, wood, barrel, stock, grip, mag, sight);
+    if (silencer) {
+      const can = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.26, 10), mat(0x2a2e34, 0.5));
+      can.rotation.x = Math.PI / 2;
+      can.position.set(0, 0.045, -0.79);
+      g.add(can);
+    }
+  } else if (id === 'pistol') {
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.09, 0.26), mat(0x2f3238));
     body.position.set(0, 0, -0.05);
     const slide = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.32), mat(0x5a6069, 0.35));
@@ -31,6 +61,12 @@ export function createItemMesh(id, gold = false) {
     mag.rotation.copy(grip.rotation);
     mag.name = 'magazine';
     g.add(body, slide, sight, barrel, guard, grip, mag);
+    if (silencer) {
+      const can = new THREE.Mesh(new THREE.CylinderGeometry(0.033, 0.033, 0.22, 10), mat(0x2a2e34, 0.5));
+      can.rotation.x = Math.PI / 2;
+      can.position.set(0, 0.07, -0.4);
+      g.add(can);
+    }
   } else if (id === 'shovel') {
     const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.95, 8), mat(0x8b6b45, 0.9));
     handle.position.set(0, 0.15, 0);
@@ -79,12 +115,13 @@ export class ViewModel {
     this.bob = 0;
   }
 
-  setItem(id, gold = false) {
-    if (this.itemId === id && this.gold === gold) return;
+  setItem(id, gold = false, silencer = false) {
+    if (this.itemId === id && this.gold === gold && this.silencer === silencer) return;
     if (this.current) this.root.remove(this.current);
     this.itemId = id;
     this.gold = gold;
-    this.current = id ? createItemMesh(id, gold) : null;
+    this.silencer = silencer;
+    this.current = id ? createItemMesh(id, gold, silencer) : null;
     if (this.current) this.root.add(this.current);
   }
 
