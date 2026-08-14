@@ -125,10 +125,10 @@ export function createWorld() {
   }
 
   // ---- 階段。1段ずつ箱を積んで、上れる高さにそろえる ----
-  // yaw は上る向き（0 なら -Z へ上がる）
-  function stairs(x, z, yaw, steps, width) {
+  // yaw は上る向き（0 なら -Z へ上がる）。baseY は上りはじめの床の高さ
+  function stairs(x, z, yaw, steps, width, baseY = 0) {
     const group = new THREE.Group();
-    group.position.set(x, 0, z);
+    group.position.set(x, baseY, z);
     group.rotation.y = yaw;
     scene.add(group);
     for (let i = 0; i < steps; i++) {
@@ -166,17 +166,30 @@ export function createWorld() {
     addBox(cx, floor1, cz, w, 0.6, d, 0x8a8177);
     addBox(cx - w / 2 + 1, floor1 + 0.6, cz + 2, 2, floor2 - floor1, d - 4, 0x7a7168);
     addBox(cx + w / 2 - 1, floor1 + 0.6, cz - 2, 2, floor2 - floor1, d - 4, 0x7a7168);
-    // 屋上
-    addBox(cx, floor2 + 0.6, cz, w, 0.6, d, 0x8a8177);
+
+    // 2階の床と屋上の高さ（人が立つ面）
+    const deck2 = floor1 + 0.6;
+    const roofTop = floor2 + 1.2;
+    // 屋上へ上がる階段の吹き抜け。この穴だけ屋上に床を張らない
+    const holeW = 4.0;
+    const holeBack = cz - 0.6;
+
+    // 屋上。吹き抜けを避けて3枚に分けて張る
+    const side = (w / 2 - holeW / 2) / 2;
+    addBox(cx - holeW / 2 - side, floor2 + 0.6, cz, side * 2, 0.6, d, 0x8a8177);
+    addBox(cx + holeW / 2 + side, floor2 + 0.6, cz, side * 2, 0.6, d, 0x8a8177);
+    addBox(cx, floor2 + 0.6, (cz - d / 2 + holeBack) / 2, holeW, 0.6, holeBack - (cz - d / 2), 0x8a8177);
+
     // 屋上のふち。落ちにくくする低い壁
     for (const s of [-1, 1]) {
-      addBox(cx + s * (w / 2 - 0.4), floor2 + 1.2, cz, 0.8, 1.0, d, 0x6f675f);
-      addBox(cx, floor2 + 1.2, cz + s * (d / 2 - 0.4), w, 1.0, 0.8, 0x6f675f);
+      addBox(cx + s * (w / 2 - 0.4), roofTop, cz, 0.8, 1.0, d, 0x6f675f);
+      addBox(cx, roofTop, cz + s * (d / 2 - 0.4), w, 1.0, 0.8, 0x6f675f);
     }
 
-    // 1階へ上がる階段（正面から）と、屋上へ上がる階段（建物の中）
+    // 1階へ上がる階段（建物の正面＝南から）
     stairs(cx + 4.5, cz + d / 2 + 5.4, 0, 7, 3.4);
-    stairs(cx - 4.5, cz + d / 2 - 1.2, Math.PI, 7, 3.4);
+    // 屋上へ上がる階段（建物の中）。1階の階段と同じ向きに、2階の床から上げる
+    stairs(cx, cz + d / 2 - 1.0, 0, 7, 3.4, deck2);
   }
 
   // ---- ちょっとした足場。階段は必ず真ん中の広場を向くようにする ----

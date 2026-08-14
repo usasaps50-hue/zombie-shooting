@@ -5,10 +5,23 @@ import { CLASS_LEVELS, CLASS_MAX_LEVEL, JOB_PRICE, ITEM_PRICE } from './data/cla
 import {
   progress, levelOf, upgradeStatus, upgrade,
   classLevelOf, classStatus, upgradeClass,
-  ownsItem, ownsJob, buyItem, buyJob, maxSlots,
+  ownsItem, ownsJob, buyItem, buyJob, maxSlots, addCoins,
+  playerName, setPlayerName,
 } from './progress.js';
+import { netReady } from './data/netconfig.js';
+
+// 名前や合言葉をそのまま HTML に入れると、記号で表示が崩れる
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
 
 const JOB_MARK = { soldier: '★', medic: '✚', architect: '⚒' };
+
+// 待機場の角にある端末の合言葉と、1回に出せるコインの上限
+const SECRET_PASS = 'Usasaburosuta';
+const MAX_SECRET_COINS = 999999;
 
 // 待機場の店。店員に話しかけると開く。
 // 品物は1行ずつの縦リストにして、数が増えてもスクロールで足りるようにしてある
@@ -52,6 +65,7 @@ export class Shop {
       shopJob: () => this.#renderJobs(),
       levelUp: () => this.#renderLevelUp(),
       battle: () => this.#renderBattle(),
+      secret: () => this.#renderSecret(),
     };
     this.listEl.innerHTML = '';
     this.coinsEl.textContent = `🪙 ${progress.coins}`;
@@ -228,33 +242,89 @@ export class Shop {
     this.listEl.appendChild(note);
   }
 
+  // 角にある端末。合言葉が合っていれば、好きな枚数のコインを取り出せる
+  #renderSecret() {
+    this.titleEl.textContent = 'あやしい端末';
+    this.keeperEl.textContent = '';
+    this.noteEl.textContent = 'ふるびた画面に「あいことば を いれよ」と出ている。';
+
+    const form = document.createElement('div');
+    form.className = 'gate-form';
+    form.innerHTML = `
+      <label for="secret-pass">あいことば</label>
+      <input id="secret-pass" type="password" maxlength="32" autocomplete="off" placeholder="＿＿＿＿＿＿">
+      <label for="secret-amount">ほしいコインの枚数</label>
+      <input id="secret-amount" type="number" min="1" max="${MAX_SECRET_COINS}" step="1" value="1000">
+      <button id="secret-go" class="primary" type="button">端末をうごかす</button>
+      <p id="secret-result" class="hint"></p>`;
+    this.listEl.appendChild(form);
+
+    const passEl = form.querySelector('#secret-pass');
+    const amountEl = form.querySelector('#secret-amount');
+    const resultEl = form.querySelector('#secret-result');
+
+    const run = () => {
+      if (passEl.value.trim().toLowerCase() !== SECRET_PASS.toLowerCase()) {
+        resultEl.textContent = 'ちがう合言葉だ… 画面が赤く光っている。';
+        resultEl.style.color = '#e8836a';
+        passEl.value = '';
+        return;
+      }
+      const amount = Math.floor(Number(amountEl.value));
+      if (!Number.isFinite(amount) || amount < 1) {
+        resultEl.textContent = '枚数は1以上の数を入れてね。';
+        resultEl.style.color = '#e8836a';
+        return;
+      }
+      const given = Math.min(amount, MAX_SECRET_COINS);
+      addCoins(given);
+      this.coinsEl.textContent = `🪙 ${progress.coins}`;
+      resultEl.textContent = given < amount
+        ? `一度に出せるのは${MAX_SECRET_COINS}枚まで。🪙+${given} 手に入れた！`
+        : `ガコン——🪙+${given} 手に入れた！`;
+      resultEl.style.color = '#8fd6a0';
+      this.onChange();
+    };
+
+    form.querySelector('#secret-go').addEventListener('click', run);
+    passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+    amountEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+  }
+
   #renderBattle() {
     this.titleEl.textContent = 'バトルゲート';
     this.keeperEl.textContent = '';
-    this.noteEl.textContent = '合言葉を決めて出発します。同じ合言葉の人と同じ部屋になります（通信は次のステップ）。';
+    this.noteEl.textContent = netReady()
+      ? '同じ合言葉を入れた人どうしが、同じ部屋で一緒に戦えます。'
+      : '合言葉を決めて出発します。オンラインで一緒に遊ぶには、src/data/netconfig.js に Supabase の設定が必要です。';
 
     const job = JOBS[this.loadout.jobId];
     const form = document.createElement('div');
     form.className = 'gate-form';
     form.innerHTML = `
+      <label for="gate-name">なまえ（他の人に見えます）</label>
+      <input id="gate-name" type="text" maxlength="12" autocomplete="off" value="${escapeHtml(playerName())}">
       <label for="gate-pass">合言葉</label>
       <div class="pass-row">
-        <input id="gate-pass" type="text" maxlength="16" autocomplete="off" value="${this.loadout.passphrase}">
+        <input id="gate-pass" type="text" maxlength="16" autocomplete="off" value="${escapeHtml(this.loadout.passphrase)}">
         <button id="gate-random" class="ghost" type="button">ランダム</button>
       </div>
       <div class="gate-summary">
         <span>${job.name} Lv${classLevelOf(job.id)}</span>
         <span>${this.loadout.items.map((id) => `${ITEMS[id].name} Lv${levelOf(id)}`).join('　')}</span>
+        <span>${netReady() ? '🟢 オンライン' : '⚪ ひとりで遊ぶ'}</span>
       </div>
       <button id="gate-go" class="primary" type="button">バトルに出発する</button>`;
     this.listEl.appendChild(form);
 
     const input = form.querySelector('#gate-pass');
+    const nameEl = form.querySelector('#gate-name');
     form.querySelector('#gate-random').addEventListener('click', () => {
       input.value = randomPass();
     });
     form.querySelector('#gate-go').addEventListener('click', () => {
       this.loadout.passphrase = input.value.trim() || 'ひとり';
+      this.loadout.name = setPlayerName(nameEl.value) || playerName();
       this.close();
       this.onBattle();
     });

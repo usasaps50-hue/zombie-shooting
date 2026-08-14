@@ -23,12 +23,17 @@ export function hpScale(wave) {
 // rarity は同じ強さ帯の中での出やすさ（ミュータントはやや少なめ）
 export const SPAWN_TABLE = [
   { id: 'normal', from: 1, rarity: 1.0 },
+  { id: 'fast', from: 2, rarity: 0.9 },
   { id: 'blue', from: 2, rarity: 1.0 },
   { id: 'silver', from: 3, rarity: 1.0 },
+  { id: 'purple', from: 4, rarity: 0.8 },
   { id: 'blueSilver', from: 4, rarity: 1.0 },
+  { id: 'skeleton', from: 5, rarity: 0.9 },
   { id: 'gold', from: 5, rarity: 1.0 },
+  { id: 'skeletonArcher', from: 6, rarity: 0.75 },
   { id: 'blueGold', from: 6, rarity: 1.0 },
   { id: 'mutant', from: 7, rarity: 0.6 },
+  { id: 'gamma', from: 8, rarity: 0.5 },
   { id: 'mutantSilver', from: 9, rarity: 0.55 },
   { id: 'mutantGold', from: 11, rarity: 0.5 },
 ];

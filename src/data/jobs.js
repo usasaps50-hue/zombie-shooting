@@ -56,7 +56,7 @@ const NORMAL_ZOMBIE = {
   sight: 14,
   walkSpeed: 1.1,
   chaseSpeed: 2.7,
-  damage: 10,
+  damage: 5,
   reach: 2.0,
   attackCooldown: 1.2,
   structureDamage: 20,
@@ -68,10 +68,113 @@ const NORMAL_ZOMBIE = {
 const BLUE_ZOMBIE = {
   ...NORMAL_ZOMBIE,
   id: 'blue',
-  name: '青ゾンビ',
+  name: '索敵ゾンビ',
   skin: 'blue',
   sight: NORMAL_ZOMBIE.sight * 1.8,
   drop: { wood: [10, 10], brick: [5, 5] },
+};
+
+// 足の速い赤いゾンビ。硬さと引き換えに、走って詰めてくる
+const FAST_ZOMBIE = {
+  ...NORMAL_ZOMBIE,
+  id: 'fast',
+  name: '俊足ゾンビ',
+  skin: 'red',
+  hp: 50,
+  sight: 20,
+  walkSpeed: 2.0,
+  chaseSpeed: 5.6,
+  attackCooldown: 0.85,
+  // 手足を振る速さ。走りに合わせて速くする
+  animRate: 1.9,
+  drop: { wood: [6, 12] },
+};
+
+// 紫ゾンビ。半分まで削ると地中へ逃げ、こちらの足元から出てくる
+const PURPLE_ZOMBIE = {
+  ...NORMAL_ZOMBIE,
+  id: 'purple',
+  name: '紫ゾンビ',
+  skin: 'purple',
+  hp: 90,
+  sight: 18,
+  chaseSpeed: 3.0,
+  // HPがこの割合を下回ったとき、この確率で一度だけ潜る
+  burrowAt: 0.5,
+  burrowChance: 0.5,
+  // 地中にいる時間。出てきてから襲いはじめるまでの2秒は、
+  // src/zombie.js の EMERGE_TIME（出現モーションの長さ）で決まる
+  burrowTime: 3.5,
+  // 相手からどれくらい離れた所に出てくるか
+  emergeRange: [3.0, 5.0],
+  drop: { wood: [8, 14], brick: [4, 8] },
+};
+
+// ガンマゾンビ。カウボーイ姿で、遠くから見つけて撃ってくる。
+// 一度見つけた相手は、索敵範囲の外に出てもずっと追いかける
+const GAMMA_ZOMBIE = {
+  ...NORMAL_ZOMBIE,
+  id: 'gamma',
+  name: 'ガンマゾンビ',
+  skin: 'gamma',
+  outfit: 'cowboy',
+  behavior: 'gunner',
+  hp: 120,
+  sight: 75,
+  walkSpeed: 1.3,
+  chaseSpeed: 2.9,
+  damage: 10,
+  // 一番近くまでは行かず、この距離を保って撃つ
+  keepRange: 11,
+  shootRange: 30,
+  shootCooldown: [1.5, 3.0],
+  spread: 0.045,
+  lockOn: true,
+  // 見つけた相手の位置を仲間に知らせる
+  shares: true,
+  avoidsWalls: true,
+  attackCooldown: 1.2,
+  structureDamage: 14,
+  drop: { wood: [10, 16], brick: [6, 12], iron: [2, 6] },
+};
+
+// スケルトン。倒しても半分の確率で組み上がって起き上がる
+const SKELETON = {
+  ...NORMAL_ZOMBIE,
+  id: 'skeleton',
+  name: 'スケルトン',
+  model: 'skeleton',
+  weapon: 'club',
+  skin: null,
+  hp: 100,
+  sight: 16,
+  walkSpeed: 1.2,
+  chaseSpeed: 3.0,
+  damage: 5,
+  reach: 2.2,
+  attackCooldown: 1.1,
+  // 死んだときに、この確率でHP半分になって復活する（1体につき1回だけ）
+  reviveChance: 0.5,
+  drop: { wood: [6, 10], brick: [4, 8] },
+};
+
+const SKELETON_ARCHER = {
+  ...SKELETON,
+  id: 'skeletonArcher',
+  name: '弓スケルトン',
+  weapon: 'bow',
+  behavior: 'archer',
+  hp: 100,
+  damage: 6,
+  chaseSpeed: 2.7,
+  // 弓の届く距離まで見えないと、いつまでも近づくだけになってしまう
+  sight: 26,
+  keepRange: 15,
+  shootRange: 26,
+  shootCooldown: [1.8, 3.2],
+  spread: 0.03,
+  avoidsWalls: true,
+  drop: { wood: [8, 12], brick: [5, 9] },
 };
 
 // 巨大なミュータント。地面を叩き割り、瀕死になると跳んでくる
@@ -85,7 +188,7 @@ const MUTANT = {
   sight: 18,
   walkSpeed: 1.0,
   chaseSpeed: 2.4,
-  damage: 20,
+  damage: 10,
   reach: 3.0,
   attackCooldown: 1.6,
   structureDamage: 40,
@@ -100,13 +203,15 @@ const MUTANT = {
   slamRange: 26,
   slamTime: 1.2,
   slamHeight: 7,
+  // 跳ぶ前の溜め。この間は落ちる場所に印が出て、代わりに攻撃が通らない
+  slamChargeTime: 1.5,
   drop: { brick: [30, 30], iron: [50, 50] },
 };
 
-// 装甲を着るとHPが増え、落とす素材も増える
+// 装甲を着るとHPが増え、殴りも重くなり、落とす素材も増える
 const ARMOR_BONUS = {
-  silver: { hp: 50, drop: { brick: [5, 5] } },
-  gold: { hp: 100, drop: { brick: [15, 15], iron: [4, 10] } },
+  silver: { hp: 50, damage: 8, drop: { brick: [5, 5] } },
+  gold: { hp: 100, damage: 8, drop: { brick: [15, 15], iron: [4, 10] } },
 };
 
 function mergeDrop(base, extra) {
@@ -127,6 +232,8 @@ function armored(base, armorId, id, name) {
     name,
     armor: armorId,
     hp: base.hp + bonus.hp,
+    // 装甲ゾンビの殴りは8。もともとそれより重いミュータントはそのまま
+    damage: Math.max(base.damage, bonus.damage),
     drop: mergeDrop(base.drop, bonus.drop),
   };
 }
@@ -139,10 +246,15 @@ function withCoins(def) {
 export const ENEMIES = Object.fromEntries(Object.entries({
   normal: NORMAL_ZOMBIE,
   blue: BLUE_ZOMBIE,
+  fast: FAST_ZOMBIE,
+  purple: PURPLE_ZOMBIE,
+  gamma: GAMMA_ZOMBIE,
+  skeleton: SKELETON,
+  skeletonArcher: SKELETON_ARCHER,
   silver: armored(NORMAL_ZOMBIE, 'silver', 'silver', '銀の装甲ゾンビ'),
   gold: armored(NORMAL_ZOMBIE, 'gold', 'gold', '金の装甲ゾンビ'),
-  blueSilver: armored(BLUE_ZOMBIE, 'silver', 'blueSilver', '銀装甲の青ゾンビ'),
-  blueGold: armored(BLUE_ZOMBIE, 'gold', 'blueGold', '金装甲の青ゾンビ'),
+  blueSilver: armored(BLUE_ZOMBIE, 'silver', 'blueSilver', '銀装甲の索敵ゾンビ'),
+  blueGold: armored(BLUE_ZOMBIE, 'gold', 'blueGold', '金装甲の索敵ゾンビ'),
   mutant: MUTANT,
   mutantSilver: armored(MUTANT, 'silver', 'mutantSilver', '銀装甲のミュータント'),
   mutantGold: armored(MUTANT, 'gold', 'mutantGold', '金装甲のミュータント'),

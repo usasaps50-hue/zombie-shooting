@@ -41,6 +41,12 @@
 
     <div id="wave"><span id="wave-num">ウェーブ 1</span><span id="wave-left">残り 15</span></div>
 
+    <!-- オンラインでつながっている人 -->
+    <div id="net" class="hidden">
+      <div id="net-status"></div>
+      <ul id="net-players"></ul>
+    </div>
+
     <div id="ammo"><span id="ammo-text">-</span></div>
 
     <ul id="slots"></ul>
@@ -120,7 +126,8 @@
   {
     "imports": {
       "three": "https://unpkg.com/three@0.180.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.180.0/examples/jsm/"
+      "three/addons/": "https://unpkg.com/three@0.180.0/examples/jsm/",
+      "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
     }
   }
   </script>

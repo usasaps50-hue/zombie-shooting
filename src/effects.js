@@ -18,9 +18,10 @@ export class Effects {
     this.shared = new Set([this.tracerGeo, this.flashCoreGeo, this.flashRingGeo]);
   }
 
-  #add(object, life, opacity, grow = 0) {
+  // tick を渡すと、消えかたを自分で決められる（進み具合 0→1 が来る）
+  #add(object, life, opacity, grow = 0, tick = null) {
     this.scene.add(object);
-    this.items.push({ object, life, maxLife: life, opacity, grow });
+    this.items.push({ object, life, maxLife: life, opacity, grow, tick });
   }
 
   // 銃口の爆発。芯と、進行方向を向いた輪が一瞬だけ広がる
@@ -129,6 +130,103 @@ export class Effects {
     this.#add(group, 0.9, 0.95, 0.5);
   }
 
+  // ミュータントが跳んでくる場所の印。中の円がふさがりきると落ちてくる
+  slamMarker(position, radius, life) {
+    const flat = (geometry, color, opacity) => {
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide,
+      }));
+      mesh.rotation.x = -Math.PI / 2;
+      return mesh;
+    };
+
+    const group = new THREE.Group();
+    group.position.set(position.x, position.y + 0.05, position.z);
+
+    const rim = flat(new THREE.RingGeometry(radius * 0.92, radius, 40), 0xff4c3a, 0.9);
+    const inner = flat(new THREE.RingGeometry(radius * 0.62, radius * 0.68, 32), 0xffb03a, 0.7);
+    // 中心から広がって、外の輪に届いたときが着地
+    const fill = flat(new THREE.CircleGeometry(radius, 36), 0xff5a3a, 0.28);
+    fill.scale.setScalar(0.01);
+    // 十字の照準
+    for (const angle of [0, Math.PI / 2]) {
+      const bar = flat(new THREE.PlaneGeometry(radius * 2.1, 0.08), 0xff8a5a, 0.75);
+      bar.rotation.z = angle;
+      group.add(bar);
+    }
+    // 落ちてくる先を空からも見えるようにする、細い光の柱
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius * 0.1, radius * 0.1, 9, 8, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xff6a4a, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide,
+      })
+    );
+    beam.position.y = 4.5;
+
+    group.add(rim, inner, fill, beam);
+    this.#add(group, life, 1, 0, (p) => {
+      fill.scale.setScalar(Math.max(0.01, p));
+      // 落ちる直前ほど速く点滅する
+      const blink = 0.55 + 0.45 * Math.sin(p * (14 + p * 40));
+      rim.material.opacity = 0.55 + blink * 0.45;
+      inner.material.opacity = 0.35 + blink * 0.45;
+      inner.scale.setScalar(1 + Math.sin(p * 12) * 0.05);
+      beam.material.opacity = 0.12 + blink * 0.16;
+    });
+  }
+
+  // 地中から出入りするときの土けむり
+  dirtBurst(position, up = true) {
+    const group = new THREE.Group();
+    group.position.set(position.x, position.y + 0.05, position.z);
+
+    const mound = new THREE.Mesh(
+      new THREE.SphereGeometry(0.85, 14, 7, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x6a563c, transparent: true, depthWrite: false })
+    );
+    mound.scale.y = 0.45;
+    group.add(mound);
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.7, 1.15, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0x4a3b28, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    group.add(ring);
+
+    // はね上がる土の粒
+    const clods = [];
+    for (let i = 0; i < 10; i++) {
+      const clod = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(0.1 + Math.random() * 0.12, 0),
+        new THREE.MeshBasicMaterial({ color: 0x5c4a33, transparent: true, depthWrite: false })
+      );
+      const angle = (i / 10) * Math.PI * 2;
+      clods.push({ clod, angle, speed: 1.2 + Math.random() * 1.4, hop: 1.6 + Math.random() * 1.6 });
+      group.add(clod);
+    }
+
+    this.#add(group, 0.75, 0.9, 0, (p) => {
+      const alpha = (1 - p) * 0.9;
+      mound.scale.set(1 + p * 0.7, 0.45 + (up ? p * 0.5 : 0), 1 + p * 0.7);
+      mound.material.opacity = alpha;
+      ring.scale.setScalar(1 + p * 1.4);
+      ring.material.opacity = alpha * 0.8;
+      for (const c of clods) {
+        const r = p * c.speed;
+        c.clod.position.set(
+          Math.sin(c.angle) * r,
+          Math.max(0.05, Math.sin(p * Math.PI) * c.hop * (up ? 1 : 0.4)),
+          Math.cos(c.angle) * r
+        );
+        c.clod.rotation.set(p * 6, p * 5, 0);
+        c.clod.material.opacity = alpha;
+      }
+    });
+  }
+
   swingArc(position, yaw, radius, arc) {
     const mesh = new THREE.Mesh(
       new THREE.RingGeometry(radius * 0.72, radius, 28, 1, Math.PI / 2 - arc / 2, arc),
@@ -162,6 +260,11 @@ export class Effects {
         continue;
       }
       const t = item.life / item.maxLife;
+      // 消えかたを自分で決めるものは、まとめて薄くしない
+      if (item.tick) {
+        item.tick(1 - t);
+        continue;
+      }
       const alpha = t * item.opacity;
       item.object.traverse((o) => { if (o.isMesh) o.material.opacity = alpha; });
       if (item.grow) item.object.scale.setScalar(1 + (1 - t) * item.grow);

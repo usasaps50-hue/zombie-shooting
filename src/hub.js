@@ -243,6 +243,95 @@ export function createHub() {
     position: new THREE.Vector3(0, 0, -(PLAZA_RADIUS + 4.0)),
   });
 
+  // バトルゲートに向かって左の角。奥まった所に、あやしい端末が置いてある
+  const secret = new THREE.Group();
+  secret.position.set(-(YARD - 5.5), 0, -(YARD - 5.5));
+  // 広場のほう（角から中心へ）を向ける。
+  // グループのローカル +Z が正面なので、中心へのベクトルをそのまま yaw にする
+  secret.rotation.y = Math.atan2(-secret.position.x, -secret.position.z);
+
+  const pad = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.6, 0.22, 20), mat(0x3f4650, 0.9));
+  pad.position.y = 0.11;
+  const pillar = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 0.9), mat(0x2b323b, 0.6));
+  pillar.position.set(0, 0.97, 0);
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.5, 1.2), mat(0x353d47, 0.6));
+  deck.position.set(0, 1.75, 0.18);
+  deck.rotation.x = -0.35;
+  const screen = new THREE.Mesh(
+    new THREE.BoxGeometry(1.35, 1.0, 0.12),
+    [mat(0x2b323b), mat(0x2b323b), mat(0x2b323b), mat(0x2b323b),
+      new THREE.MeshStandardMaterial({ map: sign('？？？', 'あいことば', '#101c14'), roughness: 0.6 }), mat(0x2b323b)]
+  );
+  screen.position.set(0, 2.5, 0.28);
+  screen.rotation.x = -0.22;
+  // 動いている印の緑のランプ
+  const lamp = new THREE.Mesh(
+    new THREE.SphereGeometry(0.11, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0x6bff9a })
+  );
+  lamp.position.set(0.62, 3.05, 0.24);
+  // キーの並び
+  for (let i = 0; i < 9; i++) {
+    const key = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.06, 0.2), mat(0x9aa6b3, 0.6));
+    key.position.set(-0.4 + (i % 3) * 0.4, 1.96 + Math.floor(i / 3) * 0.06, 0.42 - Math.floor(i / 3) * 0.3);
+    key.rotation.x = -0.35;
+    secret.add(key);
+  }
+  // 遠くからでも見つかるように、高い柱と光る看板を立てる。
+  // これがないと、広場からは端末が小さすぎて気づけない
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 7.5, 8), mat(0x3a424c, 0.6));
+  mast.position.set(-1.9, 3.75, 0);
+  const beaconGlow = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5, 0.5, 6.4, 10, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0x6bff9a, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide,
+    })
+  );
+  beaconGlow.position.set(-1.9, 4.2, 0);
+  const beacon = new THREE.Mesh(
+    new THREE.SphereGeometry(0.42, 12, 10),
+    new THREE.MeshBasicMaterial({ color: 0x6bff9a })
+  );
+  beacon.position.set(-1.9, 7.7, 0);
+  // 広場を向く大きな看板
+  const bigBoard = new THREE.Mesh(
+    new THREE.BoxGeometry(3.6, 1.5, 0.18),
+    [mat(0x1d2a20), mat(0x1d2a20), mat(0x1d2a20), mat(0x1d2a20),
+      new THREE.MeshStandardMaterial({ map: sign('？？？', 'あやしい たんまつ', '#16301f'), roughness: 0.7 }), mat(0x1d2a20)]
+  );
+  bigBoard.position.set(0, 5.4, 0.2);
+  // 足元の光る円。近づく目印になる
+  const ringLight = new THREE.Mesh(
+    new THREE.RingGeometry(2.5, 2.9, 28),
+    new THREE.MeshBasicMaterial({
+      color: 0x6bff9a, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide,
+    })
+  );
+  ringLight.rotation.x = -Math.PI / 2;
+  ringLight.position.y = 0.24;
+
+  secret.add(pad, pillar, deck, screen, lamp, mast, bigBoard);
+  secret.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  // 光るものは影を落とさない。落とすと発光して見えなくなる
+  secret.add(beacon, beaconGlow, ringLight);
+  scene.add(secret);
+  secret.updateMatrixWorld(true);
+  colliders.push(new THREE.Box3().setFromObject(pillar));
+
+  // 広場から端末まで、石畳の細い道を引く
+  const trail = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 20), mat(0x8d959e, 0.95));
+  trail.rotation.set(-Math.PI / 2, 0, -Math.atan2(secret.position.x, secret.position.z) + Math.PI);
+  trail.position.set(secret.position.x * 0.62, 0.014, secret.position.z * 0.62);
+  trail.receiveShadow = true;
+  scene.add(trail);
+
+  zones.push({
+    id: 'secret',
+    title: 'あやしい端末',
+    label: 'あやしい端末をしらべる',
+    position: secret.position.clone().add(new THREE.Vector3(1.6, 0, 1.6)),
+  });
+
   // 外の飾り。木と街灯を、道と広場を避けて並べる
   const treeMat = mat(0x4d7a3a, 1);
   const trunkMat = mat(0x6b4a2f, 1);
@@ -251,8 +340,9 @@ export function createHub() {
     const dist = 20 + Math.random() * 12;
     const x = Math.sin(angle) * dist;
     const z = Math.cos(angle) * dist;
-    // 道の延長線上は空けておく
+    // 道の延長線上と、端末のまわりは空けておく
     if (Math.abs(x) < 4 || Math.abs(z) < 4) continue;
+    if (Math.hypot(x - secret.position.x, z - secret.position.z) < 6) continue;
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 1.8, 7), trunkMat);
     trunk.position.set(x, 0.9, z);
     const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5 + Math.random() * 0.6, 0), treeMat);

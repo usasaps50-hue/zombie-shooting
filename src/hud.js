@@ -5,6 +5,13 @@ import { MAX_LEVEL } from './data/upgrades.js';
 import { levelOf } from './progress.js';
 import { IS_TOUCH } from './device.js';
 
+// 名前は他の人が決めるので、そのまま HTML に入れない
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
 const CYCLE_HINT = IS_TOUCH ? '「切替」で変更' : 'R で切替';
 const ULT_READY = IS_TOUCH ? '準備OK' : 'Q で発動';
 const SKILL_READY = IS_TOUCH ? '準備OK' : 'F で発動';
@@ -36,6 +43,10 @@ export class Hud {
     this.waveNum = document.getElementById('wave-num');
     this.waveLeft = document.getElementById('wave-left');
     this.hurt = document.getElementById('hurt');
+    this.net = document.getElementById('net');
+    this.netStatus = document.getElementById('net-status');
+    this.netPlayers = document.getElementById('net-players');
+    this.netKey = '';
     this.toastTimer = 0;
     this.slotIds = [];
     this.icons = {};
@@ -69,6 +80,40 @@ export class Hud {
 
   show() { this.el.classList.remove('hidden'); }
   hide() { this.el.classList.add('hidden'); }
+
+  // つながっている人の一覧。中身が変わったときだけ描き直す
+  updateNet(net) {
+    if (!net || net.status === 'off') {
+      this.net.classList.add('hidden');
+      this.netKey = '';
+      return;
+    }
+    this.net.classList.remove('hidden');
+
+    const list = net.online ? net.list() : [];
+    const key = `${net.status}|${net.error}|${net.room}|${list.map((p) => `${p.id}${p.name}${p.jobId}${p.host}`).join()}`;
+    if (key === this.netKey) return;
+    this.netKey = key;
+
+    if (net.status === 'connecting') {
+      this.netStatus.textContent = 'つないでいます…';
+      this.netStatus.className = 'net-wait';
+      this.netPlayers.innerHTML = '';
+      return;
+    }
+    if (net.status === 'error') {
+      this.netStatus.textContent = `⚠ ${net.error}（ひとりで続行中）`;
+      this.netStatus.className = 'net-error';
+      this.netPlayers.innerHTML = '';
+      return;
+    }
+
+    this.netStatus.textContent = `🟢 合言葉「${net.room}」 ${list.length}人`;
+    this.netStatus.className = 'net-ok';
+    this.netPlayers.innerHTML = list
+      .map((p) => `<li${p.self ? ' class="self"' : ''}>${p.host ? '👑' : '　'}${escapeHtml(p.name)}</li>`)
+      .join('');
+  }
 
   // 構えるボタンは、銃を持っているときだけ出す
   setAiming(canAim, aiming) {

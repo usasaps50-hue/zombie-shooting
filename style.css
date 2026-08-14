@@ -48,11 +48,13 @@ canvas { display: block; position: fixed; inset: 0; }
 .hint { font-size: 12px; color: #7d8794; line-height: 1.6; }
 
 .pass-row { display: flex; gap: 8px; }
-input[type=text] {
+input[type=text], input[type=password], input[type=number] {
   flex: 1; background: #0f1319; border: 1px solid #2a323d; border-radius: 8px;
-  color: #e6eaef; padding: 12px; font-size: 16px;
+  color: #e6eaef; padding: 12px; font-size: 16px; width: 100%;
 }
-input[type=text]:focus { outline: none; border-color: #4d7ea8; }
+input[type=text]:focus, input[type=password]:focus, input[type=number]:focus {
+  outline: none; border-color: #4d7ea8;
+}
 
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
 .card {
@@ -283,6 +285,23 @@ body.hub .hold-bar { display: none; }
   display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: #cbb894;
   background: #10161d; border-radius: 8px; padding: 10px 12px;
 }
+/* つながっている人の一覧。ウェーブ表示のすぐ下に出す */
+#net {
+  position: absolute; top: calc(56px + var(--safe-t)); right: calc(16px + var(--safe-r));
+  min-width: 140px; max-width: 200px; text-align: right;
+  background: rgba(10, 14, 19, .55); border-radius: 8px; padding: 6px 10px;
+  font-size: 11px; pointer-events: none;
+}
+#net-status { font-weight: 700; }
+#net-status.net-ok { color: #8fd6a0; }
+#net-status.net-wait { color: #d9c98a; }
+#net-status.net-error { color: #e8836a; }
+#net-players { list-style: none; margin-top: 4px; }
+#net-players li { color: #c9d6e4; line-height: 1.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#net-players li.self { color: #ffffff; font-weight: 700; }
+
+body.touch #net { top: calc(40px + var(--safe-t)); font-size: 10px; min-width: 110px; padding: 4px 8px; }
+
 .shop-card { display: flex; align-items: center; gap: 12px; text-align: left; }
 .shop-icon { width: 46px; height: 46px; flex: 0 0 46px; object-fit: contain; }
 .shop-emoji {

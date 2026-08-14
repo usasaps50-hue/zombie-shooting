@@ -10,6 +10,8 @@ const KEY = 'zombie-shooting-progress';
 const freeIds = (prices) => Object.keys(prices).filter((id) => !prices[id]);
 
 const empty = () => ({
+  // オンラインで他の人に見える名前
+  name: '',
   coins: 0,
   levels: Object.fromEntries(Object.keys(UPGRADES).map((id) => [id, 1])),
   classLevels: Object.fromEntries(Object.keys(JOBS).map((id) => [id, 1])),
@@ -25,6 +27,7 @@ function load() {
     if (!saved) return empty();
     const base = empty();
     return {
+      name: typeof saved.name === 'string' ? saved.name : '',
       coins: Number(saved.coins) || 0,
       levels: { ...base.levels, ...saved.levels },
       classLevels: { ...base.classLevels, ...saved.classLevels },
@@ -45,6 +48,21 @@ export function save() {
   } catch {
     /* 保存できない環境ではその場かぎりの進行になる */
   }
+}
+
+// 名前を決めていない人には、毎回同じ番号つきの名前を作って渡す
+export function playerName() {
+  if (!progress.name) {
+    progress.name = `プレイヤー${Math.floor(1000 + Math.random() * 9000)}`;
+    save();
+  }
+  return progress.name;
+}
+
+export function setPlayerName(name) {
+  progress.name = name.trim().slice(0, 12);
+  save();
+  return progress.name;
 }
 
 export function addCoins(amount) {

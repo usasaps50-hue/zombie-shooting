@@ -80,6 +80,13 @@ export class Structure {
     return this.hp - before;
   }
 
+  // オンラインで、親から届いたHPをそのまま反映する
+  setHp(hp) {
+    if (this.hp === hp) return;
+    this.hp = hp;
+    this.#showWear();
+  }
+
   #refreshLabel() {
     this.label.draw(`${Math.ceil(this.hp)} / ${this.maxHp}`, hpColor(this.hp, this.maxHp));
   }

@@ -114,9 +114,20 @@ export class Builder {
     structure.dispose();
   }
 
-  place() {
+  // いま建てられるか。オンラインでは、建てる前にこれだけ先に確かめる
+  canPlace() {
     if (!this.canAfford()) return { ok: false, message: `${this.missingText()}が足りない` };
     if (!this.ghostValid) return { ok: false, message: 'ここには建てられない' };
+    return { ok: true, message: '' };
+  }
+
+  payFor(typeId = this.typeId) {
+    for (const [id, n] of Object.entries(BUILDS[typeId].cost)) this.materials[id] -= n;
+  }
+
+  place() {
+    const check = this.canPlace();
+    if (!check.ok) return check;
 
     const replaced = this.enforceLimit(this.typeId);
     const structure = createStructure(this.typeId, this.ghostPos, this.ghostYaw);
@@ -124,11 +135,11 @@ export class Builder {
     structure.refreshBox();
     this.structures.push(structure);
 
-    for (const [id, n] of Object.entries(this.def.cost)) this.materials[id] -= n;
+    this.payFor();
     const suffix = replaced
       ? `（上限${this.def.limit}個 — 古いものが消えた）`
       : `（${costText(this.typeId)}）`;
-    return { ok: true, message: `${this.def.name}を建てた${suffix}` };
+    return { ok: true, structure, message: `${this.def.name}を建てた${suffix}` };
   }
 
   removeDead() {

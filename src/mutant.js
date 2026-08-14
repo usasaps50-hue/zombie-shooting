@@ -193,10 +193,20 @@ export class Mutant {
   setMode(name) {
     if (this.mode === name) return;
     if (this.mode === 'death') this.reset();
+    // 溜めで赤熱させたぶんを戻す
+    if (this.mode === 'charge') {
+      this.rigBob.position.y = 0;
+      for (const m of this.bodyMats) m.emissive.setRGB(0, 0, 0);
+    }
     this.torso.rotation.set(HUNCH, 0, 0);
     this.neck.rotation.set(0, 0, 0);
     this.mode = name;
     this.modeTime = 0;
+  }
+
+  // 歩きの速さの倍率。ミュータントは変えないが、ゾンビと同じ形で受け取る
+  set walkRate(rate) {
+    this._walkRate = rate;
   }
 
   restartAttack() {
@@ -270,6 +280,22 @@ export class Mutant {
       this.armR.rotation.set(armX, 0, -armZ);
       this.legL.rotation.x = p < 0.58 ? -0.15 : 0;
       this.legR.rotation.x = p < 0.58 ? -0.15 : 0;
+    } else if (this.mode === 'charge') {
+      // 跳ぶ前の溜め。低く沈み込み、うなりながら小刻みに震える
+      const p = Math.min(lt / 1.5, 1);
+      const crouch = easeOutCubic(Math.min(p / 0.45, 1));
+      const shake = Math.sin(lt * 26) * 0.05 * crouch;
+      this.rigBob.position.y = -crouch * 0.42 + Math.max(0, p - 0.85) * 1.2;
+      this.torso.rotation.set(HUNCH + crouch * 0.45, shake, 0);
+      this.neck.rotation.set(-crouch * 0.5, shake * 2, 0);
+      // 拳を胸の前で握り込む
+      this.armL.rotation.set(-0.4 - crouch * 1.5 + shake, 0, 0.5 + crouch * 0.35);
+      this.armR.rotation.set(-0.4 - crouch * 1.5 - shake, 0, -0.5 - crouch * 0.35);
+      this.legL.rotation.x = crouch * 0.75;
+      this.legR.rotation.x = crouch * 0.75;
+      // 力をためるほど体が赤熱していく
+      const heat = crouch * (0.35 + Math.sin(lt * 14) * 0.15);
+      for (const m of this.bodyMats) m.emissive.setRGB(heat, heat * 0.15, 0);
     } else if (this.mode === 'jump') {
       // 飛び上がって体を丸め、拳を振り上げたまま落ちてくる
       this.rigBob.position.y = 0;

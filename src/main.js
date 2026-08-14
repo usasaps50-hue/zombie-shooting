@@ -12,14 +12,19 @@ import { makeItemIcons } from './itemicon.js';
 import { upgradedItem, MAX_LEVEL, ROLLING_SMASH, HEADSHOT } from './data/upgrades.js';
 import { Waves } from './waves.js';
 import { WAVE } from './data/waves.js';
-import { progress, levelOf, addCoins, classBonus, maxSlots } from './progress.js';
+import { progress, levelOf, addCoins, classBonus, maxSlots, playerName } from './progress.js';
 import { Teammate, Enemy } from './entities.js';
+import { Net, Ticker } from './net.js';
+import { RemotePlayer, packPlayer } from './remote.js';
+import { NET, playerHz } from './data/netconfig.js';
+import { packWorld, applyEnemies, applyStructures, unpackWaves } from './netsync.js';
 import { Effects } from './effects.js';
 import { Builder } from './build.js';
 import { createStructure, overlaps } from './structures.js';
 import { UltimateCharge, Projectiles, Drones } from './ultimates.js';
+import { EnemyShots } from './enemyshots.js';
 import { ITEMS } from './data/items.js';
-import { JOBS, PLAYER } from './data/jobs.js';
+import { JOBS, PLAYER, ENEMIES } from './data/jobs.js';
 import { TURRET, MATERIALS } from './data/builds.js';
 import { ULTIMATES, HOSPITAL, DRONE, GOD_TURRET_ODDS } from './data/ultimates.js';
 import { ARMOR_GUN_REDUCTION } from './data/classes.js';
@@ -82,9 +87,28 @@ const waves = new Waves(enemies, spawns, {
 const builder = new Builder(scene, colliders, {});
 const projectiles = new Projectiles(scene, effects);
 const drones = new Drones(scene);
+// ガンマゾンビの弾と、弓スケルトンの矢
+const enemyShots = new EnemyShots(scene);
 
 const muzzle = new THREE.PointLight(0xffd9a0, 0, 8);
 scene.add(muzzle);
+
+// ---- オンライン ----
+const net = new Net();
+// id -> RemotePlayer
+const remotes = new Map();
+const playerTick = new Ticker(NET.playerHz);
+const worldTick = new Ticker(NET.worldHz);
+// 子のとき、親から届いたウェーブの様子（HUDに出すだけ）
+const netWaves = { wave: 0, remaining: 0, total: 0, state: 'break', timer: 0 };
+// 親が建てたものを、子側で見つけるための番号
+let structureKey = 0;
+// 前のフレームで自分が親だったか。親が抜けた瞬間を見つけるのに使う
+let wasHost = true;
+// ゾンビに「誰を狙うか」を渡すための入れ物。毎フレーム作り直さず使い回す
+const playerTargets = [];
+const localTarget = { id: net.id, position: new THREE.Vector3(), downed: false, local: true };
+setupNet();
 
 const SHOVEL_KNOCKBACK = 4.0;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -123,6 +147,7 @@ function enterHub(next) {
     loadout = { ...next, items: [...next.items] };
     syncJobItems(loadout);
   }
+  leaveRoom();
   game = null;
   paused = false;
   place = 'hub';
@@ -138,7 +163,7 @@ function enterHub(next) {
   document.body.classList.add('hub');
   pauseEl.classList.add('hidden');
   hud.show();
-  hud.setToast('待機場へようこそ。お店で装備をえらんで、奥のゲートからバトルへ', 4);
+  hud.setToast('待機場へようこそ。お店で装備をえらんで、奥のゲートからバトルへ（ゲートの左奥、緑の光のところに「あやしい端末」）', 5);
   if (IS_TOUCH) goLandscapeFullscreen();
   input.requestLock();
 }
@@ -168,6 +193,7 @@ function startGame(loadout) {
   input.reset();
   builder.clear();
   projectiles.clear();
+  enemyShots.clear();
   drones.clear();
   builder.materials = { ...(job.materials ?? {}) };
   waves.reset();
@@ -180,6 +206,25 @@ function startGame(loadout) {
   hud.setToast(`バトル開始！ 合言葉「${loadout.passphrase}」`, 2.5);
   if (IS_TOUCH) goLandscapeFullscreen();
   resume();
+
+  // 同じ合言葉の人と同じ部屋に入る。設定していなければ、そのままひとりで遊ぶ
+  clearRemotes();
+  structureKey = 0;
+  net.join(loadout.passphrase, {
+    name: loadout.name || playerName(),
+    jobId: job.id,
+  }).catch(() => {});
+}
+
+// 部屋を出るときの後片付け
+function clearRemotes() {
+  for (const remote of remotes.values()) remote.dispose(scene);
+  remotes.clear();
+}
+
+function leaveRoom() {
+  net.leave();
+  clearRemotes();
 }
 
 // スタート操作のうちに全画面と横固定を頼む。対応していない端末では黙って何も起きない
@@ -211,7 +256,9 @@ function toLobby() {
   paused = false;
   place = 'lobby';
   hubPlayer = null;
+  leaveRoom();
   projectiles.clear();
+  enemyShots.clear();
   drones.clear();
   scene.add(camera);
   document.body.classList.remove('hub');
@@ -228,6 +275,7 @@ document.getElementById('btn-resume').addEventListener('click', resume);
 document.getElementById('btn-tolobby').addEventListener('click', toLobby);
 document.getElementById('btn-tohub').addEventListener('click', () => {
   projectiles.clear();
+  enemyShots.clear();
   drones.clear();
   builder.clear();
   playerBody.setVisible(false);
@@ -266,7 +314,25 @@ function onWeaponEvent(ev) {
 }
 
 function build() {
+  // 子は自分では建てない。素材だけ払って、親に建ててもらう
+  if (net.online && !net.isHost) {
+    const check = builder.canPlace();
+    if (!check.ok) {
+      hud.setToast(check.message, 1.6);
+      return false;
+    }
+    builder.payFor(builder.typeId);
+    net.send('build', {
+      t: builder.typeId,
+      x: r2(builder.ghostPos.x), y: r2(builder.ghostPos.y), z: r2(builder.ghostPos.z),
+      yaw: r2(builder.ghostYaw),
+    });
+    hud.setToast(`${builder.def.name}を建てた`, 1.4);
+    return true;
+  }
+
   const result = builder.place();
+  if (result.ok) result.structure.netKey = ++structureKey;
   hud.setToast(result.message, result.ok ? 1.4 : 1.6);
   return result.ok;
 }
@@ -283,34 +349,227 @@ function rollDrops(def) {
   return gained.join('　');
 }
 
-// source はダメージを出した武器。レベルの特典はこれで判定する
-function damageEnemy(enemy, amount, now, source = null) {
+// 倒したごほうび。コイン・素材・武器レベルの特典をまとめて渡す
+function awardKill(def, source) {
+  if (!game) return;
+  const coins = def.coins;
+  addCoins(coins);
+  game.coins += coins;
+  const bonus = source?.effects;
+  // Lv3・Lv4のピストル：その武器で倒したときだけ効く
+  if (bonus?.healOnKill) game.player.heal(bonus.healOnKill);
+  if (bonus?.invulnOnKill) {
+    game.player.invulnUntil = Math.max(game.player.invulnUntil, game.player.time + bonus.invulnOnKill);
+  }
+  hud.setToast(`${def.name}撃破 — ${rollDrops(def)}　🪙+${coins}`, 1.6);
+}
+
+// source はダメージを出した武器。レベルの特典はこれで判定する。
+// by は「誰が当てたか」。オンラインでは、この人がコインと素材をもらう
+function damageEnemy(enemy, amount, now, source = null, by = net.id) {
   // 装甲を着たゾンビは、銃とタレットの弾が通りにくい
   if (enemy.def.armor && source?.kind === 'gun') amount *= 1 - ARMOR_GUN_REDUCTION;
   amount = Math.max(1, Math.round(amount));
+
+  // 子はダメージを自分で決めない。親にお願いして、結果を待つ
+  if (net.online && !net.isHost) {
+    if (!enemy.alive || enemy.invulnerable) return false;
+    net.send('hit', { i: enemies.indexOf(enemy), d: amount, by: net.id });
+    // 手ごたえだけは自分の画面ですぐ出す
+    const guess = Math.min(amount, enemy.hp);
+    game?.ult.add('damage', guess);
+    if (source?.effects?.lifesteal && game) game.player.heal(guess * source.effects.lifesteal);
+    return false;
+  }
+
   const dealt = Math.min(amount, enemy.hp);
   // ジャンプ中など、当たらないこともある
   if (!enemy.hit(amount, now)) return false;
-  game?.ult.add('damage', dealt);
 
-  const bonus = source?.effects;
-  // Lv5のシャベル：当てたダメージの半分を吸収する
-  if (bonus?.lifesteal && game) game.player.heal(dealt * bonus.lifesteal);
+  const mine = by === net.id;
+  if (mine) {
+    game?.ult.add('damage', dealt);
+    // Lv5のシャベル：当てたダメージの半分を吸収する
+    if (source?.effects?.lifesteal && game) game.player.heal(dealt * source.effects.lifesteal);
+  }
 
   if (enemy.alive) return false;
-
-  if (game) {
-    const coins = enemy.def.coins;
-    addCoins(coins);
-    game.coins += coins;
-    // Lv3・Lv4のピストル：その武器で倒したときだけ効く
-    if (bonus?.healOnKill) game.player.heal(bonus.healOnKill);
-    if (bonus?.invulnOnKill) {
-      game.player.invulnUntil = Math.max(game.player.invulnUntil, game.player.time + bonus.invulnOnKill);
-    }
-    hud.setToast(`${enemy.def.name}撃破 — ${rollDrops(enemy.def)}　🪙+${coins}`, 1.6);
-  }
+  if (mine) awardKill(enemy.def, source);
+  // 倒したのが他の人なら、その人にごほうびを渡すよう知らせる
+  else net.send('kill', { i: enemies.indexOf(enemy), t: enemy.def.id, by });
   return true;
+}
+
+// ---- オンラインの受け取り口 ----
+
+const r2 = (n) => Math.round(n * 100) / 100;
+
+function setupNet() {
+  // 部屋の顔ぶれが変わった。入った人を出し、いなくなった人の姿を消す
+  net.on('peers', (list) => {
+    for (const p of list) {
+      if (p.self) continue;
+      const remote = remotes.get(p.id);
+      if (remote) {
+        remote.setProfile(p);
+      } else {
+        remotes.set(p.id, new RemotePlayer(scene, p));
+        hud.setToast(`${p.name} が入ってきた`, 2.4);
+      }
+    }
+    for (const [id, remote] of remotes) {
+      if (list.some((p) => p.id === id)) continue;
+      hud.setToast(`${remote.name} が出ていった`, 2.4);
+      remote.dispose(scene);
+      remotes.delete(id);
+    }
+  });
+
+  // つながった／切れたの知らせ。同じ知らせを何度も出さないようにする
+  let lastStatus = '';
+  net.on('status', () => {
+    if (net.status === lastStatus) return;
+    lastStatus = net.status;
+    if (net.status === 'online') {
+      hud.setToast(net.isHost ? `部屋「${net.room}」をひらいた（あなたが親）` : `部屋「${net.room}」に入った`, 2.6);
+    } else if (net.status === 'error') {
+      hud.setToast(`オンラインにつながりません — ${net.error}`, 4);
+    }
+  });
+
+  // 他の人の位置と姿
+  net.on('p', (msg) => {
+    let remote = remotes.get(msg.i);
+    if (!remote) {
+      const info = net.peers.get(msg.i);
+      if (!info) return;
+      remote = new RemotePlayer(scene, info);
+      remotes.set(msg.i, remote);
+    }
+    remote.apply(msg.s, performance.now() / 1000);
+    // 撃った瞬間なら、こちらの画面にも弾道を出す
+    if (remote.justFired) remoteShot(remote);
+  });
+
+  // 親から届く世界のようす（ゾンビ・建物・ウェーブ）
+  net.on('w', (msg) => {
+    if (net.isHost) return;
+    const next = unpackWaves(msg.w);
+
+    // ウェーブが進んだ＝前のウェーブをクリアした。コインは各自でもらう
+    if (netWaves.wave && next.wave > netWaves.wave) {
+      addCoins(WAVE.clearCoins);
+      if (game) game.coins += WAVE.clearCoins;
+      hud.setToast(`ウェーブ ${netWaves.wave} クリア！ 🪙+${WAVE.clearCoins}`, 3);
+    } else if (next.wave && next.wave !== netWaves.wave) {
+      hud.setToast(`ウェーブ ${next.wave} — ゾンビ ${next.total} 体`, 2.6);
+    }
+    Object.assign(netWaves, next);
+
+    applyEnemies(msg.e, enemies);
+    applyStructures(msg.s ?? [], { scene, builder });
+  });
+
+  // 子から届いた「当てた」。親が本当に減らす
+  net.on('hit', (msg) => {
+    if (!net.isHost) return;
+    const enemy = enemies[msg.i];
+    if (!enemy || !enemy.active) return;
+    damageEnemy(enemy, msg.d, performance.now() / 1000, null, msg.by);
+  });
+
+  // 自分が倒したことになった。コインと素材はここでもらう
+  net.on('kill', (msg) => {
+    if (msg.by !== net.id) return;
+    const def = ENEMIES[msg.t];
+    if (def) awardKill(def, game?.weapons?.current ?? null);
+  });
+
+  // 子から届いた「ここに建てたい」。置けるかどうかは親が決める
+  net.on('build', (msg) => {
+    if (!net.isHost) return;
+    placeNetStructure(msg.t, new THREE.Vector3(msg.x, msg.y, msg.z), msg.yaw);
+  });
+
+  // 親から届いた「あなたがやられた」
+  net.on('dmg', (msg) => {
+    if (msg.to !== net.id || !game || paused) return;
+    applyDamage(msg.d);
+  });
+
+  // 味方に助け起こされた
+  net.on('revive', (msg) => {
+    if (msg.to !== net.id || !game || !game.player.downed) return;
+    game.player.revive();
+    playerBody.setVisible(false);
+    playerBody.setDowned(false);
+    hud.setToast(`助けてもらった！ ${PLAYER.reviveInvulnTime}秒間無敵`, 2.5);
+  });
+
+  // 他の人の必殺技。見た目はみんなの画面に出す
+  net.on('ult', (msg) => {
+    const from = new THREE.Vector3(...msg.f);
+    const to = new THREE.Vector3(...msg.t);
+    if (msg.k === 'bomb') projectiles.bomb(from, to);
+    else if (msg.k === 'rocket') projectiles.rocket(from, to);
+  });
+
+  // 親のゾンビが撃った弾。子の画面では見た目だけ飛ばす
+  net.on('eshot', (msg) => {
+    if (net.isHost) return;
+    const from = new THREE.Vector3(...msg.f);
+    const dir = new THREE.Vector3(...msg.d);
+    if (msg.k === 'bullet') {
+      effects.muzzleFlash(from, dir);
+      enemyShots.bulletAlong(from, dir, 0);
+    } else {
+      enemyShots.arrowAlong(from, dir, 0);
+    }
+  });
+
+  // その他の見た目（地割れ・土けむり・着地の印）
+  net.on('fx', (msg) => {
+    const at = new THREE.Vector3(...msg.p);
+    if (msg.k === 'crack') effects.groundCrack(at, msg.r);
+    else if (msg.k === 'dirt') effects.dirtBurst(at, !!msg.u);
+    else if (msg.k === 'mark') effects.slamMarker(at, msg.r, msg.l);
+  });
+}
+
+// 他の人が撃った弾道を、こちらの画面にも描く
+function remoteShot(remote) {
+  const from = remote.muzzle();
+  const dir = remote.direction();
+  raycaster.set(from, dir);
+  raycaster.far = 60;
+  const hit = raycaster.intersectObjects(enemies.filter((e) => e.alive).map((e) => e.hitbox), false)[0];
+  const end = hit ? hit.point : from.clone().addScaledVector(dir, 40);
+  effects.muzzleFlash(from, dir);
+  effects.tracer(from, end);
+}
+
+// 親として建物を置く。素材の持ち主は建てた本人なので、ここでは減らさない
+function placeNetStructure(typeId, position, yaw) {
+  const structure = createStructure(typeId, position, yaw);
+  scene.add(structure.root);
+  structure.root.updateMatrixWorld(true);
+  structure.refreshBox();
+  if (overlaps(structure.box, colliders, builder.structures)) {
+    scene.remove(structure.root);
+    structure.dispose();
+    return null;
+  }
+  builder.enforceLimit(typeId);
+  structure.netKey = ++structureKey;
+  builder.structures.push(structure);
+  return structure;
+}
+
+// 親が送る、いまの世界のようす
+function sendWorld() {
+  const packed = packWorld(enemies, builder.structures, waves, structureKey);
+  structureKey = packed.nextKey;
+  net.send('w', packed.msg);
 }
 
 // 弾道と発砲炎は目の中ではなく、手に持った銃の銃口から出す
@@ -320,6 +579,34 @@ function muzzleOrigin(dir) {
     .addScaledVector(right, 0.28)
     .addScaledVector(WORLD_UP, -0.24)
     .addScaledVector(dir, 0.95);
+}
+
+// ゾンビ側の射撃。ガンマゾンビは弾、弓スケルトンは矢を飛ばす。
+// 撃つのは親だけで、飛んでいく向きを子にも送って同じ弾を見せる
+function enemyShoot(enemy, kind, damage, target, now) {
+  if (!target) return;
+  const from = enemy.zombie.muzzlePoint
+    ? enemy.zombie.muzzlePoint(new THREE.Vector3())
+    : enemy.eyePoint();
+  // 銃口が取れなかったときは、目の高さから出す
+  if (from.lengthSq() < 0.01) enemy.eyePoint(from);
+  const to = target.position.clone();
+  const spread = enemy.def.spread ?? 0.04;
+
+  let dir;
+  if (kind === 'bullet') {
+    effects.muzzleFlash(from, to.clone().sub(from).normalize());
+    dir = enemyShots.bullet(from, to, damage, spread);
+    // 発砲音。近くのゾンビもこちらに気づく
+    makeNoise(enemy.position.clone(), 26, now);
+  } else {
+    dir = enemyShots.arrow(from, to, damage, spread);
+  }
+  net.send('eshot', {
+    k: kind,
+    f: [r2(from.x), r2(from.y), r2(from.z)],
+    d: [r2(dir.x), r2(dir.y), r2(dir.z)],
+  });
 }
 
 // 銃声。届いた範囲のゾンビが音のした場所へ寄ってくる
@@ -403,7 +690,15 @@ function placeUltStructure(typeId, distance) {
   // 高台の上で使ったら、その床の上に置く
   const feet = game.player.position.y - EYE_HEIGHT;
   spot.y = floorHeight(colliders, spot.x, spot.z, feet + 0.4);
-  const structure = createStructure(typeId, spot, Math.atan2(-dir.x, -dir.z));
+  const yaw = Math.atan2(-dir.x, -dir.z);
+
+  // 子は自分では置かず、親に置いてもらう（置けるかどうかも親が決める）
+  if (net.online && !net.isHost) {
+    net.send('build', { t: typeId, x: r2(spot.x), y: r2(spot.y), z: r2(spot.z), yaw: r2(yaw) });
+    return true;
+  }
+
+  const structure = createStructure(typeId, spot, yaw);
   scene.add(structure.root);
   structure.root.updateMatrixWorld(true);
   structure.refreshBox();
@@ -415,6 +710,7 @@ function placeUltStructure(typeId, distance) {
     return null;
   }
   builder.enforceLimit(typeId);
+  structure.netKey = ++structureKey;
   builder.structures.push(structure);
   return structure;
 }
@@ -426,7 +722,14 @@ const ULT_ACTIONS = {
       hud.setToast('近くにゾンビがいない', 1.4);
       return false;
     }
-    projectiles.bomb(muzzleOrigin(camera.getWorldDirection(new THREE.Vector3())), target.position);
+    const from = muzzleOrigin(camera.getWorldDirection(new THREE.Vector3()));
+    projectiles.bomb(from, target.position);
+    // みんなの画面にも同じところへ飛ばす
+    net.send('ult', {
+      k: 'bomb',
+      f: [r2(from.x), r2(from.y), r2(from.z)],
+      t: [r2(target.position.x), r2(target.position.y), r2(target.position.z)],
+    });
     hud.setToast(`${ULTIMATES.soldier.name}を投げた！`, 1.6);
     return true;
   },
@@ -552,7 +855,14 @@ function useSkill() {
 // ミュータントが狙う候補。人・味方・建てたものの位置を集める
 function slamTargets() {
   const spots = builder.structures.filter((s) => s.alive).map((s) => s.root.position);
-  for (const mate of teammates) spots.push(mate.position);
+  // オンラインでは本物の仲間、オフラインではデモの仲間を狙う
+  if (net.online) {
+    for (const remote of remotes.values()) {
+      if (!remote.downed && remote.placed) spots.push(remote.position);
+    }
+  } else {
+    for (const mate of teammates) spots.push(mate.position);
+  }
   spots.push(...drones.positions());
   if (game && !paused && !game.player.downed) {
     spots.push(new THREE.Vector3(game.player.position.x, 0, game.player.position.z));
@@ -610,9 +920,14 @@ function applyDamage(amount) {
 
 function contextAction(dt) {
   const { player, job } = game;
-  if (player.downed) return { text: '倒れています（味方の蘇生を待っています）', progress: 0 };
+  if (player.downed) {
+    const helper = net.online ? '味方の蘇生を待っています' : '味方の蘇生を待っています';
+    return { text: `倒れています（${helper}）`, progress: 0 };
+  }
 
-  const downedNear = teammates.find(
+  // オンラインでは本物の仲間、オフラインではデモの仲間を助け起こす
+  const candidates = net.online ? [...remotes.values()] : teammates;
+  const downedNear = candidates.find(
     (t) => t.downed && t.position.distanceTo(player.position) < 2.5
   );
 
@@ -620,10 +935,11 @@ function contextAction(dt) {
     return holdAction(dt, 'revive', ITEMS.bandage.reviveTime,
       `${downedNear.name} を蘇生（${input.isTouch ? '「使」長押し' : 'E長押し'}）`,
       () => {
-        downedNear.setDowned(false);
+        downedNear.setDowned?.(false);
         player.bandages--;
         // 蘇生は、その味方のHPぶんを回復したものとして必殺技に加算する
         game.ult.add('heal', downedNear.maxHp);
+        if (downedNear.id) net.send('revive', { to: downedNear.id });
         hud.setToast(`${downedNear.name} を蘇生！ ${PLAYER.reviveInvulnTime}秒間無敵`, 2.5);
       });
   }
@@ -721,12 +1037,22 @@ function frame() {
 
   muzzle.intensity = Math.max(0, muzzle.intensity - dt * 90);
 
+  // ゾンビが狙う相手の一覧。自分と、つながっている人たち
+  const targets = collectTargets();
+  // 親（またはオフライン）だけがゾンビとウェーブを動かす
+  const simulating = net.isHost;
+  // 親が抜けたら、次に早く入った人が引き継ぐ
+  if (simulating && !wasHost && net.online && netWaves.wave) takeOverAsHost();
+  wasHost = simulating;
+
   const world = {
     colliders,
     structures: builder.structures,
-    player: game && !paused ? game.player : null,
-    onHitPlayer: (enemy, amount) => {
-      applyDamage(amount);
+    players: targets,
+    onHitPlayer: (enemy, amount, target) => {
+      // 殴られたのが自分なら自分で減らし、他の人ならその人に知らせる
+      if (target?.local) applyDamage(amount);
+      else if (target) net.send('dmg', { to: target.id, d: amount });
       if (enemy.def.crackRadius) smashGround(enemy);
       // ミュータントは殴った範囲のドローンも巻き込む
       if (enemy.def.breaksDrones) {
@@ -738,19 +1064,82 @@ function frame() {
       if (structure.damage(amount)) hud.setToast(`${structure.def.name}が壊された`, 1.4);
     },
     onSlam: (enemy, damage, radius) => slam(enemy, damage, radius, now),
+    // 跳ぶ前の溜め。落ちてくる場所に印を出して、よけられるようにする
+    onSlamAim: (enemy, spot, radius, life) => {
+      effects.slamMarker(spot, radius, life);
+      net.send('fx', { k: 'mark', p: [r2(spot.x), r2(spot.y), r2(spot.z)], r: radius, l: life });
+      hud.setToast(`${enemy.def.name}が跳ぶ構え！ 印から離れろ`, 2.0);
+    },
+    onShoot: (enemy, kind, damage, target) => enemyShoot(enemy, kind, damage, target, now),
+    onBurrow: (enemy, phase) => {
+      effects.dirtBurst(enemy.position, phase === 'out');
+      net.send('fx', {
+        k: 'dirt',
+        p: [r2(enemy.position.x), r2(enemy.position.y), r2(enemy.position.z)],
+        u: phase === 'out' ? 1 : 0,
+      });
+      if (phase === 'in') hud.setToast(`${enemy.def.name}が地中にもぐった！`, 2.0);
+      else hud.setToast(`${enemy.def.name}が足元から出てきた！`, 2.0);
+    },
+    // ガンマゾンビが見つけた相手の居場所は、離れた仲間にも伝わる
+    onSpot: (enemy, spot, first) => {
+      for (const other of enemies) {
+        if (other !== enemy) other.alert(spot, now);
+      }
+      if (first) hud.setToast(`${enemy.def.name}に見つかった！ 居場所が仲間に伝わっている`, 2.6);
+    },
     slamTargets,
     stairPoints,
   };
-  if (game && !paused) waves.update(dt);
-  for (const e of enemies) e.update(dt, now, world);
+
+  if (simulating) {
+    if (game && !paused) waves.update(dt);
+    for (const e of enemies) e.update(dt, now, world);
+  } else {
+    // 子はゾンビを考えさせず、届いた場所へなじませるだけ
+    for (const e of enemies) e.netUpdate(dt);
+  }
+
+  // タレットとゴッドタレットが撃つのも親の仕事。子は見た目だけ動かす
   for (const s of builder.structures) {
+    if (!simulating) {
+      // 子でも砲塔はゾンビのほうを向く（撃つのは親だけなので、弾は出さない）
+      s.update?.(dt, enemies, () => {});
+      // 野戦病院の回復は、自分のHPは自分で管理しているのでここでかける
+      if (s.def.kind === 'hospital') healAround(s, dt);
+      continue;
+    }
     if (s.def.kind === 'turret') s.update(dt, enemies, (turret, target) => beamShot(turret, target, TURRET.damage, now));
-    else if (s.def.kind === 'godturret') s.update(dt, enemies, (turret, target) => projectiles.rocket(turret.muzzle(), target.position));
+    else if (s.def.kind === 'godturret') {
+      s.update(dt, enemies, (turret, target) => {
+        const from = turret.muzzle();
+        projectiles.rocket(from, target.position);
+        net.send('ult', {
+          k: 'rocket',
+          f: [r2(from.x), r2(from.y), r2(from.z)],
+          t: [r2(target.position.x), r2(target.position.y), r2(target.position.z)],
+        });
+      });
+    }
     else if (s.def.kind === 'hospital') healAround(s, dt);
   }
-  projectiles.update(dt, enemies, (center, radius, damage) => explode(center, radius, damage, now));
 
-  builder.removeDead();
+  // 爆発のダメージも親が決める。子の画面では火の玉だけ出す
+  projectiles.update(dt, enemies, (center, radius, damage) => {
+    if (simulating) explode(center, radius, damage, now);
+  });
+
+  // ゾンビ側の弾と矢。親だけが当たり判定をして、当たった人に知らせる
+  enemyShots.update(dt, simulating ? targets : [], colliders, (damage, point, target) => {
+    if (target.local) {
+      effects.headshot(point);
+      applyDamage(damage);
+    } else {
+      net.send('dmg', { to: target.id, d: damage });
+    }
+  });
+
+  if (simulating) builder.removeDead();
   effects.update(dt);
 
   if (game && !paused) {
@@ -795,15 +1184,39 @@ function frame() {
     else builder.hideGhost();
     viewModel.update(dt, anim, Math.min(player.speed / 4.5, 1));
 
-    teammates[0].avatar.setItem(held, heldGold, heldSilencer);
-    teammates[0].update(dt, { itemId: held, anim: spinAnim() ?? hurtAnim(player) ?? anim });
-    teammates[1].update(dt, { itemId: null, anim: { name: 'idle', t: 0 } });
+    // デモの味方はオフラインのときだけ出す
+    const showDemo = !net.online;
+    for (const mate of teammates) mate.setVisible(showDemo);
+    if (showDemo) {
+      teammates[0].avatar.setItem(held, heldGold, heldSilencer);
+      teammates[0].update(dt, { itemId: held, anim: spinAnim() ?? hurtAnim(player) ?? anim });
+      teammates[1].update(dt, { itemId: null, anim: { name: 'idle', t: 0 } });
+    }
+
+    const shownAnim = spinAnim() ?? hurtAnim(player) ?? anim;
+    // 自分のようすを、決まった間隔でみんなに送る
+    playerTick.hz = playerHz(net.count);
+    if (net.online && playerTick.ready(dt)) {
+      net.send('p', {
+        i: net.id,
+        s: packPlayer(player, {
+          itemId: held,
+          gold: heldGold,
+          silencer: heldSilencer,
+          anim: shownAnim,
+          feetY: player.position.y - EYE_HEIGHT,
+        }),
+      });
+    }
+    // 親はゾンビと建物のようすも送る
+    if (net.online && net.isHost && worldTick.ready(dt)) sendWorld();
 
     if (player.downed) {
       playerBody.update(dt, { itemId: null, anim: { name: 'idle', t: 0 } });
       // 倒れた瞬間は自分の体、そのあと味方を観戦する
       const watchSelf = player.time - player.downedAt < 2.5;
-      const target = watchSelf ? playerBody : (teammates.find((t) => !t.downed) ?? teammates[0]);
+      const mates = net.online ? [...remotes.values()] : teammates;
+      const target = watchSelf ? playerBody : (mates.find((t) => !t.downed) ?? playerBody);
       const eye = target.position.clone().add(new THREE.Vector3(0, 3.2, 4.5));
       camera.position.lerp(eye, Math.min(dt * 3, 1));
       camera.lookAt(target.position.clone().setY(watchSelf ? 0.4 : 1.2));
@@ -819,7 +1232,7 @@ function frame() {
       ult,
       skill: game.skill,
       coins: progress.coins,
-      waves,
+      waves: waveInfo(),
     });
   } else if (game) {
     hud.update(dt, {
@@ -831,7 +1244,7 @@ function frame() {
       ult: game.ult,
       skill: game.skill,
       coins: progress.coins,
-      waves,
+      waves: waveInfo(),
     });
   } else {
     camera.position.set(0, EYE_HEIGHT, 8);
@@ -840,7 +1253,54 @@ function frame() {
     teammates[1].update(dt, { itemId: null, anim: { name: 'idle', t: 0 } });
   }
 
+  // 他のプレイヤーの見た目。しばらく音沙汰がない人は消す
+  for (const [id, remote] of remotes) {
+    if (net.online && now - remote.lastSeen > NET.timeout && remote.lastSeen) {
+      remote.dispose(scene);
+      remotes.delete(id);
+      continue;
+    }
+    remote.update(dt);
+  }
+  hud.updateNet(net);
+
   renderer.render(scene, camera);
+}
+
+// 親が抜けたときの引き継ぎ。ゾンビはいまの場所のまま、ウェーブの続きから動かす
+function takeOverAsHost() {
+  waves.wave = netWaves.wave;
+  waves.left = 0;
+  waves.state = 'spawning';
+  waves.timer = 0;
+  // 親から届いた建物は、そのまま自分が持ち主になる
+  for (const s of builder.structures) structureKey = Math.max(structureKey, s.netKey ?? 0);
+  hud.setToast('前の親が抜けました。あなたが親になりました', 3.2);
+}
+
+// HUDに出すウェーブの情報。子は親から届いたものを使う
+function waveInfo() {
+  return net.online && !net.isHost ? netWaves : waves;
+}
+
+// ゾンビが狙う相手を集める。自分＋つながっている人
+function collectTargets() {
+  playerTargets.length = 0;
+  if (game && !paused && !game.player.downed) {
+    localTarget.position.copy(game.player.position);
+    localTarget.downed = false;
+    localTarget.id = net.id;
+    playerTargets.push(localTarget);
+  }
+  for (const remote of remotes.values()) {
+    if (remote.downed || !remote.placed) continue;
+    playerTargets.push({
+      id: remote.id,
+      position: remote.aimPoint(),
+      downed: false,
+    });
+  }
+  return playerTargets;
 }
 frame();
 
