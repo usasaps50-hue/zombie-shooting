@@ -121,8 +121,9 @@ export function upgradedItem(itemId, level) {
   if (base.damage) {
     let damage = base.damage * (1 + DAMAGE_PER_LEVEL * (level - 1));
     if (bonus.damageScale) damage *= bonus.damageScale;
-    // レベルの効果に数字そのものの指定があれば、それで置きかえる
-    item.damage = Math.max(1, Math.round(bonus.damage ?? damage));
+    // 端数は切り上げる。四捨五入だと、元の火力が小さい武器
+    // （AK47など）でレベルを上げても数字が変わらないことがある
+    item.damage = Math.max(1, Math.ceil(bonus.damage ?? damage));
   }
   if (bonus.magazine) item.magazine = bonus.magazine;
   if (bonus.fireInterval) item.fireInterval = bonus.fireInterval;
