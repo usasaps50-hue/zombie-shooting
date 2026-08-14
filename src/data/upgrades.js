@@ -38,7 +38,45 @@ export const UPGRADES = {
       { cost: 750, gold: true, lifesteal: 0.5, unlocks: 'sword', desc: '見た目が金色／与ダメージの半分を回復／ソードのレベル3が開放' },
     ],
   },
+  megaphone: {
+    id: 'megaphone',
+    levels: [
+      { speedUp: 0.1, desc: '基本性能（仲間の移動速度+10%を10秒）' },
+      { cost: 150, speedUp: 0.15, desc: '移動速度+15%' },
+      { cost: 300, powerUp: 0.1, desc: '攻撃力+10% が加わる' },
+      { cost: 600, guard: 0.05, desc: '受けるダメージ-5% が加わる' },
+      {
+        cost: 900,
+        gold: true,
+        speedUp: 0.2,
+        powerUp: 0.2,
+        guard: 0.1,
+        desc: '見た目が金色／被ダメージ-10%・移動速度+20%・攻撃力+20%',
+      },
+    ],
+  },
 };
+
+// 拡声器でかかる効果をまとめる。何もつかないレベルは buff を返さない
+export function buffOf(item) {
+  const e = item?.effects ?? {};
+  const buff = {
+    speedUp: e.speedUp ?? 0,
+    powerUp: e.powerUp ?? 0,
+    guard: e.guard ?? 0,
+  };
+  return buff.speedUp || buff.powerUp || buff.guard ? buff : null;
+}
+
+// 「移動+20%／攻撃+20%／被ダメ-10%」のような表示用の文
+export function buffText(buff) {
+  if (!buff) return '';
+  const parts = [];
+  if (buff.speedUp) parts.push(`移動+${Math.round(buff.speedUp * 100)}%`);
+  if (buff.powerUp) parts.push(`攻撃+${Math.round(buff.powerUp * 100)}%`);
+  if (buff.guard) parts.push(`被ダメ-${Math.round(buff.guard * 100)}%`);
+  return parts.join('／');
+}
 
 // 攻撃を当てた回数がこれだけ貯まるとスキルが撃てる
 export const ROLLING_SMASH = { need: 5, range: 4.2, damageScale: 1.0, spinTime: 0.7 };

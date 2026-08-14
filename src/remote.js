@@ -12,7 +12,7 @@ export const STATE = {
   X: 0, Y: 1, Z: 2, YAW: 3, PITCH: 4, HP: 5, MAXHP: 6,
   FLAGS: 7, ITEM: 8, ANIM: 9, ANIM_T: 10, SPEED: 11,
 };
-export const FLAG = { DOWNED: 1, GOLD: 2, SILENCER: 4 };
+export const FLAG = { DOWNED: 1, GOLD: 2, SILENCER: 4, BUFFED: 8 };
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
@@ -26,7 +26,8 @@ export function packPlayer(player, { itemId, gold, silencer, anim, feetY }) {
     round2(player.pitch),
     Math.round(player.hp),
     player.maxHp,
-    (player.downed ? FLAG.DOWNED : 0) | (gold ? FLAG.GOLD : 0) | (silencer ? FLAG.SILENCER : 0),
+    (player.downed ? FLAG.DOWNED : 0) | (gold ? FLAG.GOLD : 0)
+      | (silencer ? FLAG.SILENCER : 0) | (player.buffed ? FLAG.BUFFED : 0),
     itemId ?? '',
     anim?.name ?? 'idle',
     round2(anim?.t ?? 0),
@@ -53,6 +54,19 @@ export class RemotePlayer {
     this.label = makeLabel(1.8);
     this.label.sprite.position.y = 2.15;
     this.avatar.root.add(this.label.sprite);
+
+    // 拡声器の効果がかかっている間だけ出す、足元の金の輪
+    this.aura = new THREE.Mesh(
+      new THREE.RingGeometry(0.55, 0.8, 20),
+      new THREE.MeshBasicMaterial({
+        color: 0xffc94a, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide,
+      })
+    );
+    this.aura.rotation.x = -Math.PI / 2;
+    this.aura.position.y = 0.05;
+    this.aura.visible = false;
+    this.avatar.root.add(this.aura);
+
     scene.add(this.avatar.root);
 
     // 受け取った位置。ここへ向かって毎フレーム近づける
@@ -114,6 +128,8 @@ export class RemotePlayer {
       !!(flags & FLAG.GOLD),
       !!(flags & FLAG.SILENCER)
     );
+    // 拡声器の効果がかかっている人の足元に、金の輪を出す
+    this.aura.visible = !!(flags & FLAG.BUFFED) && !downed;
 
     // 「撃った」に切り替わった瞬間を見つけて、こちらでも弾道を出す
     const anim = { name: state[STATE.ANIM], t: state[STATE.ANIM_T] };
@@ -149,6 +165,8 @@ export class RemotePlayer {
   }
 
   update(dt) {
+    // 輪はゆっくり回して、止まって見えないようにする
+    if (this.aura.visible) this.aura.rotation.z += dt * 1.5;
     const k = Math.min(dt * NET.lerpSpeed, 1);
     this.position.lerp(this.target, k);
 

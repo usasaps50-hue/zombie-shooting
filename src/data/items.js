@@ -57,8 +57,24 @@ export const ITEMS = {
     jobOnly: 'medic',
     icon: '🩹',
   },
+  // 攻撃はできないが、近くの仲間（と自分）をまとめて強くする
+  megaphone: {
+    id: 'megaphone',
+    name: '拡声器',
+    kind: 'buff',
+    // 使ってから次に使えるまで
+    cooldown: 15,
+    swingTime: 0.6,
+    // 声が届いて効果がかかる距離
+    range: 14,
+    // 効果が続く時間
+    buffTime: 10,
+    // 大声なので、遠くのゾンビにも気づかれる
+    noise: 30,
+    icon: '📢',
+  },
 };
 
-export const SELECTABLE_ITEMS = ['pistol', 'ak47', 'shovel', 'hammer'];
+export const SELECTABLE_ITEMS = ['pistol', 'ak47', 'shovel', 'megaphone', 'hammer'];
 // 持てる数はクラスのレベルで変わる（progress.js の maxSlots）
 export const BASE_SLOTS = 3;

@@ -9,7 +9,7 @@ import { Lobby } from './lobby.js';
 import { createHub, TALK_RANGE } from './hub.js';
 import { Shop, syncJobItems, randomPass } from './shop.js';
 import { makeItemIcons } from './itemicon.js';
-import { upgradedItem, MAX_LEVEL, ROLLING_SMASH, HEADSHOT } from './data/upgrades.js';
+import { upgradedItem, MAX_LEVEL, ROLLING_SMASH, HEADSHOT, buffOf, buffText } from './data/upgrades.js';
 import { Waves } from './waves.js';
 import { WAVE } from './data/waves.js';
 import { progress, levelOf, addCoins, classBonus, maxSlots, playerName } from './progress.js';
@@ -29,6 +29,7 @@ import { TURRET, MATERIALS } from './data/builds.js';
 import { ULTIMATES, HOSPITAL, DRONE, GOD_TURRET_ODDS } from './data/ultimates.js';
 import { ARMOR_GUN_REDUCTION } from './data/classes.js';
 import { IS_TOUCH, QUALITY } from './device.js';
+import { sfx } from './audio.js';
 
 const canvas = document.getElementById('game');
 
@@ -76,7 +77,10 @@ const enemies = Array.from(
 );
 
 const waves = new Waves(enemies, spawns, {
-  onWaveStart: (wave, count) => hud.setToast(`ウェーブ ${wave} — ゾンビ ${count} 体`, 2.6),
+  onWaveStart: (wave, count) => {
+    sfx.play('wave');
+    hud.setToast(`ウェーブ ${wave} — ゾンビ ${count} 体`, 2.6);
+  },
   onWaveClear: (wave) => {
     addCoins(WAVE.clearCoins);
     if (game) game.coins += WAVE.clearCoins;
@@ -118,8 +122,8 @@ const FOV_AIM = 42;
 
 // HUDと店で使う武器アイコン。実際の3Dモデルを描いた画像（金色版も作っておく）
 const ITEM_ICONS = makeItemIcons([
-  'pistol', 'ak47', 'shovel', 'hammer', 'bandage',
-  'pistol:gold', 'ak47:gold', 'shovel:gold',
+  'pistol', 'ak47', 'shovel', 'hammer', 'bandage', 'megaphone',
+  'pistol:gold', 'ak47:gold', 'shovel:gold', 'megaphone:gold',
 ]);
 hud.setIcons(ITEM_ICONS);
 
@@ -163,7 +167,7 @@ function enterHub(next) {
   document.body.classList.add('hub');
   pauseEl.classList.add('hidden');
   hud.show();
-  hud.setToast('待機場へようこそ。お店で装備をえらんで、奥のゲートからバトルへ（ゲートの左奥、緑の光のところに「あやしい端末」）', 5);
+  hud.setToast('待機場へようこそ。お店で装備をえらんで、奥のゲートからバトルへ（広場の左手前、緑に光る柱が「あやしい端末」）', 5);
   if (IS_TOUCH) goLandscapeFullscreen();
   input.requestLock();
 }
@@ -281,6 +285,11 @@ document.getElementById('btn-tohub').addEventListener('click', () => {
   playerBody.setVisible(false);
   enterHub();
 });
+// ブラウザは操作があるまで音を出せない。最初のクリックやキーで用意する
+for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
+  addEventListener(ev, () => sfx.unlock(), { once: false, passive: true });
+}
+
 const playing = () => place !== 'lobby' && !paused && !shop.open;
 
 document.getElementById('btn-pause').addEventListener('click', () => {
@@ -296,6 +305,7 @@ addEventListener('keydown', (e) => {
     else paused ? resume() : pause();
   }
   if (e.code === 'KeyG' && game && !paused) applyDamage(25);
+  if (e.code === 'KeyM') hud.setToast(sfx.toggleMute() ? '🔇 音を消した（M でもどす）' : '🔊 音を出した', 1.6);
 });
 document.addEventListener('pointerlockchange', () => {
   if (playing() && !input.locked && !input.isTouch) pause();
@@ -304,13 +314,51 @@ document.addEventListener('pointerlockchange', () => {
 function onWeaponEvent(ev) {
   if (ev.type === 'shoot') shoot(ev.item);
   else if (ev.type === 'swing') swing(ev.item);
-  else if (ev.type === 'empty') hud.setToast('弾切れ — R でリロード');
-  else if (ev.type === 'reloaded') hud.setToast('リロード完了');
+  else if (ev.type === 'empty') {
+    sfx.play('empty');
+    hud.setToast('弾切れ — R でリロード');
+  } else if (ev.type === 'reloaded') {
+    sfx.play('reload');
+    hud.setToast('リロード完了');
+  }
   else if (ev.type === 'build') return build();
+  else if (ev.type === 'buff') return useMegaphone(ev.item);
   else if (ev.type === 'cycleBuild') {
     const def = builder.cycleType(1);
     hud.setToast(`${def.name}を選択`, 1.0);
   }
+}
+
+// 拡声器。自分と、声の届く仲間をまとめて強くする
+function useMegaphone(item) {
+  const { player } = game;
+  if (player.downed) return false;
+  const buff = buffOf(item);
+  if (!buff) {
+    hud.setToast('この拡声器にはまだ効果がない', 1.6);
+    return false;
+  }
+
+  const now = performance.now() / 1000;
+  const range = item.range;
+  player.applyBuff(buff, item.buffTime);
+  effects.shout(new THREE.Vector3(player.position.x, player.position.y - EYE_HEIGHT, player.position.z), range);
+  sfx.play('megaphone');
+  // 大声なので、まわりのゾンビが寄ってくる
+  makeNoise(player.position.clone(), item.noise ?? 0, now);
+
+  // 声の届く仲間にも同じ効果を配る
+  let reached = 0;
+  for (const remote of remotes.values()) {
+    if (remote.downed || !remote.placed) continue;
+    if (remote.position.distanceTo(player.position) > range) continue;
+    net.send('buff', { to: remote.id, b: buff, t: item.buffTime });
+    reached++;
+  }
+
+  const who = reached ? `自分と仲間${reached}人` : '自分';
+  hud.setToast(`${item.name}！ ${who}に ${buffText(buff)}（${item.buffTime}秒）`, 2.6);
+  return true;
 }
 
 function build() {
@@ -333,6 +381,7 @@ function build() {
 
   const result = builder.place();
   if (result.ok) result.structure.netKey = ++structureKey;
+  sfx.play(result.ok ? 'build' : 'empty');
   hud.setToast(result.message, result.ok ? 1.4 : 1.6);
   return result.ok;
 }
@@ -361,12 +410,15 @@ function awardKill(def, source) {
   if (bonus?.invulnOnKill) {
     game.player.invulnUntil = Math.max(game.player.invulnUntil, game.player.time + bonus.invulnOnKill);
   }
+  sfx.play('coin');
   hud.setToast(`${def.name}撃破 — ${rollDrops(def)}　🪙+${coins}`, 1.6);
 }
 
 // source はダメージを出した武器。レベルの特典はこれで判定する。
 // by は「誰が当てたか」。オンラインでは、この人がコインと素材をもらう
 function damageEnemy(enemy, amount, now, source = null, by = net.id) {
+  // 拡声器がかかっている間は、自分の攻撃だけ威力が上がる
+  if (by === net.id && game && source) amount *= game.player.powerScale;
   // 装甲を着たゾンビは、銃とタレットの弾が通りにくい
   if (enemy.def.armor && source?.kind === 'gun') amount *= 1 - ARMOR_GUN_REDUCTION;
   amount = Math.max(1, Math.round(amount));
@@ -394,6 +446,7 @@ function damageEnemy(enemy, amount, now, source = null, by = net.id) {
   }
 
   if (enemy.alive) return false;
+  sfx.playAt('die', enemy.position);
   if (mine) awardKill(enemy.def, source);
   // 倒したのが他の人なら、その人にごほうびを渡すよう知らせる
   else net.send('kill', { i: enemies.indexOf(enemy), t: enemy.def.id, by });
@@ -497,10 +550,19 @@ function setupNet() {
     applyDamage(msg.d);
   });
 
+  // 仲間の拡声器で強くしてもらった
+  net.on('buff', (msg) => {
+    if (msg.to !== net.id || !game || game.player.downed) return;
+    game.player.applyBuff(msg.b, msg.t);
+    sfx.play('buffed');
+    hud.setToast(`仲間の拡声器！ ${buffText(msg.b)}（${msg.t}秒）`, 2.4);
+  });
+
   // 味方に助け起こされた
   net.on('revive', (msg) => {
     if (msg.to !== net.id || !game || !game.player.downed) return;
     game.player.revive();
+    sfx.play('revive');
     playerBody.setVisible(false);
     playerBody.setDowned(false);
     hud.setToast(`助けてもらった！ ${PLAYER.reviveInvulnTime}秒間無敵`, 2.5);
@@ -510,6 +572,7 @@ function setupNet() {
   net.on('ult', (msg) => {
     const from = new THREE.Vector3(...msg.f);
     const to = new THREE.Vector3(...msg.t);
+    sfx.playAt('ultimate', from, { volume: 0.7 });
     if (msg.k === 'bomb') projectiles.bomb(from, to);
     else if (msg.k === 'rocket') projectiles.rocket(from, to);
   });
@@ -519,6 +582,7 @@ function setupNet() {
     if (net.isHost) return;
     const from = new THREE.Vector3(...msg.f);
     const dir = new THREE.Vector3(...msg.d);
+    sfx.playAt(msg.k === 'bullet' ? 'pistol' : 'bow', from, { volume: 0.8 });
     if (msg.k === 'bullet') {
       effects.muzzleFlash(from, dir);
       enemyShots.bulletAlong(from, dir, 0);
@@ -530,9 +594,16 @@ function setupNet() {
   // その他の見た目（地割れ・土けむり・着地の印）
   net.on('fx', (msg) => {
     const at = new THREE.Vector3(...msg.p);
-    if (msg.k === 'crack') effects.groundCrack(at, msg.r);
-    else if (msg.k === 'dirt') effects.dirtBurst(at, !!msg.u);
-    else if (msg.k === 'mark') effects.slamMarker(at, msg.r, msg.l);
+    if (msg.k === 'crack') {
+      effects.groundCrack(at, msg.r);
+      sfx.playAt('slam', at);
+    } else if (msg.k === 'dirt') {
+      effects.dirtBurst(at, !!msg.u);
+      sfx.playAt('dig', at);
+    } else if (msg.k === 'mark') {
+      effects.slamMarker(at, msg.r, msg.l);
+      sfx.playAt('growl', at, { volume: 1.4 });
+    }
   });
 }
 
@@ -546,6 +617,7 @@ function remoteShot(remote) {
   const end = hit ? hit.point : from.clone().addScaledVector(dir, 40);
   effects.muzzleFlash(from, dir);
   effects.tracer(from, end);
+  sfx.playAt('pistol', from, { volume: 0.8 });
 }
 
 // 親として建物を置く。素材の持ち主は建てた本人なので、ここでは減らさない
@@ -594,6 +666,7 @@ function enemyShoot(enemy, kind, damage, target, now) {
   const spread = enemy.def.spread ?? 0.04;
 
   let dir;
+  sfx.playAt(kind === 'bullet' ? 'pistol' : 'bow', enemy.position, { volume: 0.8 });
   if (kind === 'bullet') {
     effects.muzzleFlash(from, to.clone().sub(from).normalize());
     dir = enemyShots.bullet(from, to, damage, spread);
@@ -633,6 +706,7 @@ function shoot(item) {
   const from = muzzleOrigin(dir);
   effects.muzzleFlash(from, dir);
   effects.tracer(from, end);
+  sfx.play(item.effects?.silencer ? 'silenced' : (item.id === 'ak47' ? 'ak47' : 'pistol'));
   makeNoise(camera.position.clone(), item.noise ?? 0, now);
 
   if (!hit) return;
@@ -640,7 +714,10 @@ function shoot(item) {
   // 当たった高さが頭の位置なら、ヘッドショット
   const head = hit.point.y - enemy.position.y >= enemy.def.height * HEADSHOT.from;
   const damage = head ? Math.round(item.damage * HEADSHOT.multiplier) : item.damage;
-  if (head) effects.headshot(hit.point);
+  if (head) {
+    effects.headshot(hit.point);
+    sfx.play('headshot');
+  }
   // 倒したときの表示は damageEnemy 側が出す
   if (!damageEnemy(enemy, damage, now, item)) {
     hud.setToast(head ? `ヘッドショット！ -${damage}` : `ヒット -${damage}`, 0.8);
@@ -660,6 +737,7 @@ function beamShot(shooter, target, damage, now) {
 }
 
 function explode(center, radius, damage, now) {
+  sfx.playAt('explode', center);
   for (const enemy of enemies) {
     if (!enemy.alive) continue;
     const to = enemy.position.clone().sub(center).setY(0);
@@ -765,7 +843,10 @@ function useUltimate() {
     hud.setToast(`${ult.def.name}はチャージ中（${Math.floor(ult.value * 100)}%）`, 1.4);
     return;
   }
-  if (ULT_ACTIONS[job.id]()) ult.consume();
+  if (ULT_ACTIONS[job.id]()) {
+    sfx.play('ultimate');
+    ult.consume();
+  }
 }
 
 // 野戦病院の周りにいる味方とタレットを回復し続ける
@@ -788,6 +869,7 @@ function swing(item) {
   const origin = camera.position;
   const flat = camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize();
   effects.swingArc(new THREE.Vector3(origin.x, 1.1, origin.z), game.player.yaw, item.range, item.arc);
+  sfx.play('swing');
   // シャベルはほとんど音がしないので、すぐ近くにしか気づかれない
   makeNoise(origin.clone(), item.noise ?? 0, performance.now() / 1000);
 
@@ -804,6 +886,7 @@ function swing(item) {
     hits++;
   }
   if (!hits) return;
+  sfx.play('hit');
   hud.setToast(`ヒット -${item.damage}`, 0.8);
   chargeSkill(item);
 }
@@ -849,6 +932,7 @@ function useSkill() {
     damageEnemy(enemy, damage, now, item);
     enemy.knockback(to.normalize(), SHOVEL_KNOCKBACK);
   }
+  sfx.play('swing');
   hud.setToast(`${skill.name}！`, 1.4);
 }
 
@@ -874,6 +958,7 @@ function slamTargets() {
 function slam(enemy, damage, radius, now) {
   const center = enemy.position.clone().setY(0);
   effects.groundCrack(center, radius);
+  sfx.playAt('slam', enemy.position);
   hud.setToast(`${enemy.def.name}が着地した！`, 1.6);
 
   for (const s of builder.structures) {
@@ -909,8 +994,11 @@ function spinAnim() {
 
 function applyDamage(amount) {
   const { player } = game;
+  const before = player.hp;
   const wentDown = player.damage(amount);
+  if (player.hp < before) sfx.play('hurt');
   if (!wentDown) return;
+  sfx.play('down');
   playerBody.position.set(player.position.x, 0, player.position.z);
   playerBody.avatar.root.rotation.y = player.yaw + Math.PI;
   playerBody.setDowned(true);
@@ -940,6 +1028,7 @@ function contextAction(dt) {
         // 蘇生は、その味方のHPぶんを回復したものとして必殺技に加算する
         game.ult.add('heal', downedNear.maxHp);
         if (downedNear.id) net.send('revive', { to: downedNear.id });
+        sfx.play('revive');
         hud.setToast(`${downedNear.name} を蘇生！ ${PLAYER.reviveInvulnTime}秒間無敵`, 2.5);
       });
   }
@@ -950,6 +1039,7 @@ function contextAction(dt) {
       () => {
         game.ult.add('heal', player.heal(ITEMS.bandage.heal));
         player.bandages--;
+        sfx.play('heal');
         hud.setToast(`包帯を使った（HP+${ITEMS.bandage.heal}）`);
       });
   }
@@ -1036,6 +1126,7 @@ function frame() {
   }
 
   muzzle.intensity = Math.max(0, muzzle.intensity - dt * 90);
+  sfx.setListener(camera);
 
   // ゾンビが狙う相手の一覧。自分と、つながっている人たち
   const targets = collectTargets();
@@ -1051,6 +1142,7 @@ function frame() {
     players: targets,
     onHitPlayer: (enemy, amount, target) => {
       // 殴られたのが自分なら自分で減らし、他の人ならその人に知らせる
+      sfx.playAt('hit', enemy.position);
       if (target?.local) applyDamage(amount);
       else if (target) net.send('dmg', { to: target.id, d: amount });
       if (enemy.def.crackRadius) smashGround(enemy);
@@ -1061,18 +1153,21 @@ function frame() {
     },
     onBreak: (enemy, structure, amount) => {
       if (enemy.def.crackRadius) smashGround(enemy);
+      sfx.playAt('break', structure.root.position);
       if (structure.damage(amount)) hud.setToast(`${structure.def.name}が壊された`, 1.4);
     },
     onSlam: (enemy, damage, radius) => slam(enemy, damage, radius, now),
     // 跳ぶ前の溜め。落ちてくる場所に印を出して、よけられるようにする
     onSlamAim: (enemy, spot, radius, life) => {
       effects.slamMarker(spot, radius, life);
+      sfx.playAt('growl', enemy.position, { volume: 1.4 });
       net.send('fx', { k: 'mark', p: [r2(spot.x), r2(spot.y), r2(spot.z)], r: radius, l: life });
       hud.setToast(`${enemy.def.name}が跳ぶ構え！ 印から離れろ`, 2.0);
     },
     onShoot: (enemy, kind, damage, target) => enemyShoot(enemy, kind, damage, target, now),
     onBurrow: (enemy, phase) => {
       effects.dirtBurst(enemy.position, phase === 'out');
+      sfx.playAt('dig', enemy.position);
       net.send('fx', {
         k: 'dirt',
         p: [r2(enemy.position.x), r2(enemy.position.y), r2(enemy.position.z)],
@@ -1233,6 +1328,8 @@ function frame() {
       skill: game.skill,
       coins: progress.coins,
       waves: waveInfo(),
+      buff: player.buffed ? { text: buffText(player.buff), left: player.buffLeft } : null,
+      cooldown: weapons.current?.kind === 'buff' ? weapons.cooldownLeft() : 0,
     });
   } else if (game) {
     hud.update(dt, {
@@ -1245,6 +1342,8 @@ function frame() {
       skill: game.skill,
       coins: progress.coins,
       waves: waveInfo(),
+      buff: null,
+      cooldown: 0,
     });
   } else {
     camera.position.set(0, EYE_HEIGHT, 8);

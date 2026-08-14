@@ -285,6 +285,8 @@ body.hub .hold-bar { display: none; }
   display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: #cbb894;
   background: #10161d; border-radius: 8px; padding: 10px 12px;
 }
+#buff-text.on { color: #ffd76a; font-weight: 700; }
+
 /* つながっている人の一覧。ウェーブ表示のすぐ下に出す */
 #net {
   position: absolute; top: calc(56px + var(--safe-t)); right: calc(16px + var(--safe-r));

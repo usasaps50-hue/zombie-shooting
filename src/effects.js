@@ -227,6 +227,48 @@ export class Effects {
     });
   }
 
+  // 拡声器の呼びかけ。金色の輪が広がって、届く範囲を見せる
+  shout(position, radius) {
+    const group = new THREE.Group();
+    group.position.set(position.x, position.y + 0.06, position.z);
+
+    const rings = [];
+    for (let i = 0; i < 3; i++) {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(radius * 0.94, radius, 40),
+        new THREE.MeshBasicMaterial({
+          color: i === 1 ? 0xfff0b0 : 0xffc94a,
+          transparent: true,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      rings.push({ ring, delay: i * 0.14 });
+      group.add(ring);
+    }
+
+    // 立ち上がる光の柱。かかっている人の目印になる
+    const pillar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.9, 1.3, 3.2, 14, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd76a, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      })
+    );
+    pillar.position.y = 1.6;
+    group.add(pillar);
+
+    this.#add(group, 0.95, 1, 0, (p) => {
+      for (const { ring, delay } of rings) {
+        const t = THREE.MathUtils.clamp((p - delay) / (1 - delay), 0, 1);
+        ring.scale.setScalar(Math.max(0.05, t));
+        ring.material.opacity = t <= 0 ? 0 : (1 - t) * 0.85;
+      }
+      pillar.scale.set(1 + p * 0.5, 1 + p * 0.6, 1 + p * 0.5);
+      pillar.material.opacity = (1 - p) * 0.35;
+    });
+  }
+
   swingArc(position, yaw, radius, arc) {
     const mesh = new THREE.Mesh(
       new THREE.RingGeometry(radius * 0.72, radius, 28, 1, Math.PI / 2 - arc / 2, arc),

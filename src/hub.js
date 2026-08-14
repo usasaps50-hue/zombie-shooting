@@ -243,12 +243,14 @@ export function createHub() {
     position: new THREE.Vector3(0, 0, -(PLAZA_RADIUS + 4.0)),
   });
 
-  // バトルゲートに向かって左の角。奥まった所に、あやしい端末が置いてある
+  // あやしい端末。広場のすぐ横（北西のななめ）に置いて、
+  // スポーン地点から振り向いただけで見えるようにする
+  const secretAngle = -Math.PI * 0.75;
+  const secretDist = PLAZA_RADIUS + 4.5;
   const secret = new THREE.Group();
-  secret.position.set(-(YARD - 5.5), 0, -(YARD - 5.5));
-  // 広場のほう（角から中心へ）を向ける。
-  // グループのローカル +Z が正面なので、中心へのベクトルをそのまま yaw にする
-  secret.rotation.y = Math.atan2(-secret.position.x, -secret.position.z);
+  secret.position.set(Math.sin(secretAngle) * secretDist, 0, Math.cos(secretAngle) * secretDist);
+  // 広場のほうを向ける。お店と同じで、角度に半回転足すと中心を向く
+  secret.rotation.y = secretAngle + Math.PI;
 
   const pad = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.6, 0.22, 20), mat(0x3f4650, 0.9));
   pad.position.y = 0.11;
@@ -319,17 +321,20 @@ export function createHub() {
   colliders.push(new THREE.Box3().setFromObject(pillar));
 
   // 広場から端末まで、石畳の細い道を引く
-  const trail = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 20), mat(0x8d959e, 0.95));
-  trail.rotation.set(-Math.PI / 2, 0, -Math.atan2(secret.position.x, secret.position.z) + Math.PI);
-  trail.position.set(secret.position.x * 0.62, 0.014, secret.position.z * 0.62);
+  const trail = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 9), mat(0x8d959e, 0.95));
+  trail.rotation.set(-Math.PI / 2, 0, -secretAngle);
+  trail.position.set(secret.position.x * 0.72, 0.014, secret.position.z * 0.72);
   trail.receiveShadow = true;
   scene.add(trail);
 
+  // 話しかける位置は、端末の広場側の手前
+  const secretFront = new THREE.Vector3(0, 0, 2.4)
+    .applyAxisAngle(new THREE.Vector3(0, 1, 0), secretAngle + Math.PI);
   zones.push({
     id: 'secret',
     title: 'あやしい端末',
     label: 'あやしい端末をしらべる',
-    position: secret.position.clone().add(new THREE.Vector3(1.6, 0, 1.6)),
+    position: secret.position.clone().add(secretFront),
   });
 
   // 外の飾り。木と街灯を、道と広場を避けて並べる
@@ -342,7 +347,7 @@ export function createHub() {
     const z = Math.cos(angle) * dist;
     // 道の延長線上と、端末のまわりは空けておく
     if (Math.abs(x) < 4 || Math.abs(z) < 4) continue;
-    if (Math.hypot(x - secret.position.x, z - secret.position.z) < 6) continue;
+    if (Math.hypot(x - secret.position.x, z - secret.position.z) < 7) continue;
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 1.8, 7), trunkMat);
     trunk.position.set(x, 0.9, z);
     const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5 + Math.random() * 0.6, 0), treeMat);
@@ -352,7 +357,8 @@ export function createHub() {
     scene.add(leaves);
   }
 
-  for (const angle of [Math.PI / 4, Math.PI * 0.75, -Math.PI / 4, -Math.PI * 0.75]) {
+  // -3π/4 の方角にはあやしい端末を置いたので、街灯は立てない
+  for (const angle of [Math.PI / 4, Math.PI * 0.75, -Math.PI / 4]) {
     const x = Math.sin(angle) * (PLAZA_RADIUS + 2.2);
     const z = Math.cos(angle) * (PLAZA_RADIUS + 2.2);
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 3.6, 8), mat(0x3f4650, 0.6));

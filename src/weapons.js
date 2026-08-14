@@ -74,7 +74,18 @@ export class Weapons {
       if (this.onEvent({ type: 'build', item }) === false) return;
       st.readyAt = this.time + item.cooldown;
       this.#play('swing', item.swingTime);
+    } else if (item.kind === 'buff') {
+      // 拡声器。効果がかからなかったときは、待ち時間を入れない
+      if (this.onEvent({ type: 'buff', item }) === false) return;
+      st.readyAt = this.time + item.cooldown;
+      this.#play('shout', item.swingTime);
     }
+  }
+
+  // いまの武器があと何秒で使えるようになるか（0 なら使える）
+  cooldownLeft() {
+    const st = this.currentState;
+    return st ? Math.max(0, st.readyAt - this.time) : 0;
   }
 
   reload() {

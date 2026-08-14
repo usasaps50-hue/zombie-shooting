@@ -39,6 +39,7 @@ export class Hud {
     this.skillText = document.getElementById('skill-text');
     this.skillBtn = document.getElementById('btn-skill');
     this.coinText = document.getElementById('coin-text');
+    this.buffText = document.getElementById('buff-text');
     this.aimBtn = document.getElementById('btn-aim');
     this.waveNum = document.getElementById('wave-num');
     this.waveLeft = document.getElementById('wave-left');
@@ -168,6 +169,7 @@ export class Hud {
     this.reloadBtn.classList.toggle('hidden', !cycles && item?.kind !== 'gun');
     this.reloadBtn.textContent = cycles ? '切替' : 'R';
 
+    this.#updateBuff(state.buff, state.cooldown);
     this.#updateWave(state.waves);
     this.#updateUlt(state.ult);
     this.#updateSkill(state.skill);
@@ -185,6 +187,20 @@ export class Hud {
     if (this.toastTimer > 0) {
       this.toastTimer -= dt;
       if (this.toastTimer <= 0) this.toast.classList.add('hidden');
+    }
+  }
+
+  // 拡声器の効果と、次に使えるまでの待ち時間
+  #updateBuff(buff, cooldown) {
+    const show = !!buff || cooldown > 0;
+    this.buffText.classList.toggle('hidden', !show);
+    if (!show) return;
+    if (buff) {
+      this.buffText.textContent = `📢 ${buff.text}　あと${buff.left.toFixed(1)}秒`;
+      this.buffText.classList.add('on');
+    } else {
+      this.buffText.textContent = `📢 つぎまで ${cooldown.toFixed(1)}秒`;
+      this.buffText.classList.remove('on');
     }
   }
 

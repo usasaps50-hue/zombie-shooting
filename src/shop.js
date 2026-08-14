@@ -1,6 +1,8 @@
 import { ITEMS, SELECTABLE_ITEMS } from './data/items.js';
 import { JOBS } from './data/jobs.js';
-import { UPGRADES, MAX_LEVEL, DAMAGE_PER_LEVEL } from './data/upgrades.js';
+import {
+  UPGRADES, MAX_LEVEL, DAMAGE_PER_LEVEL, buffOf, buffText, upgradedItem,
+} from './data/upgrades.js';
 import { CLASS_LEVELS, CLASS_MAX_LEVEL, JOB_PRICE, ITEM_PRICE } from './data/classes.js';
 import {
   progress, levelOf, upgradeStatus, upgrade,
@@ -121,7 +123,9 @@ export class Shop {
             ? `Lv${levelOf(id)}　火力 ${item.damage} ／ 装弾数 ${item.magazine}発`
             : item.kind === 'build'
               ? '壁とタレットを建てる'
-              : `Lv${levelOf(id)}　火力 ${item.damage} ／ ${item.cooldown}秒に1回`;
+              : item.kind === 'buff'
+                ? `Lv${levelOf(id)}　${buffText(buffOf(upgradedItem(id, levelOf(id)))) || '効果なし'}を${item.buffTime}秒 ／ ${item.cooldown}秒に1回`
+                : `Lv${levelOf(id)}　火力 ${item.damage} ／ ${item.cooldown}秒に1回`;
 
       const action = jobLocked ? '×' : !owned ? `🪙${price}` : on ? 'はずす' : '持つ';
 
@@ -214,7 +218,10 @@ export class Shop {
       if (!ownsItem(id)) continue;
       const level = levelOf(id);
       const status = upgradeStatus(id);
-      const power = `火力+${Math.round(DAMAGE_PER_LEVEL * (level - 1) * 100)}%`;
+      const item = upgradedItem(id, level);
+      const power = item.kind === 'buff'
+        ? buffText(buffOf(item))
+        : `火力+${Math.round(DAMAGE_PER_LEVEL * (level - 1) * 100)}%`;
       const next = status.max ? 'これ以上は上がらない（最大）' : UPGRADES[id].levels[level].desc;
       const stat = `Lv${level} / ${MAX_LEVEL}　${power}<br><span class="shop-next">次：${next}</span>`;
       const action = status.max ? 'MAX' : status.locked ? '🔒' : `🪙${status.cost}`;

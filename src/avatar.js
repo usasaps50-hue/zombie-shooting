@@ -230,6 +230,8 @@ export class Avatar {
     const holding = this.itemId === 'shovel' || this.itemId === 'hammer'
       ? 'shovel'
       : this.itemId ? 'gun' : null;
+    // 拡声器は口元に構えるので、腕をもっと上げる
+    const megaphone = this.itemId === 'megaphone';
     let armR = holding ? HOLD_ARM_X[holding] : -step;
     let armL = holding === 'gun' ? -1.25 : holding === 'shovel' ? -0.3 : step;
     let armRz = holding === 'shovel' ? -0.35 : 0;
@@ -270,6 +272,14 @@ export class Avatar {
       armL = 0;
       armLz = 0;
       this.body.rotation.y = Math.sin(t * Math.PI) * 0.08;
+    } else if (name === 'shout') {
+      // 拡声器を口元へ掲げて呼びかける
+      const raise = smooth(phase(t, 0, 0.25)) - smooth(phase(t, 0.7, 1));
+      armR = -1.45 - raise * 0.65;
+      armRz = -0.15 - raise * 0.25;
+      armL = -0.2 + raise * 0.9;
+      armLz = 0.1;
+      this.body.rotation.y = Math.sin(t * Math.PI * 2) * 0.1 * raise;
     } else if (name === 'hurt') {
       // 一瞬のけぞって、両腕で頭をかばう
       const recoil = t < 0.25 ? smooth(t / 0.25) : 1 - smooth((t - 0.25) / 0.75);
@@ -281,7 +291,10 @@ export class Avatar {
       this.body.position.z = -recoil * 0.14;
     }
 
-    if (name !== 'swing' && name !== 'wave' && name !== 'spin') {
+    // 拡声器を持っているだけのときも、少し高く構えさせる
+    if (megaphone && name !== 'shout') armR -= 0.35;
+
+    if (name !== 'swing' && name !== 'wave' && name !== 'spin' && name !== 'shout') {
       this.body.rotation.y = THREE.MathUtils.lerp(this.body.rotation.y, 0, dt * 10);
     }
 

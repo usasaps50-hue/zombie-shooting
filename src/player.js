@@ -56,10 +56,38 @@ export class Player {
     // 持っている武器とクラスのレベルでつくボーナス
     this.speedBonus = 0;
     this.damageReduction = 0;
+    // 拡声器でかかる、時間つきの強化
+    this.buff = { until: 0, speedUp: 0, powerUp: 0, guard: 0 };
   }
 
   get invulnerable() {
     return this.time < this.invulnUntil;
+  }
+
+  // 拡声器の効果が続いているか
+  get buffed() {
+    return this.time < this.buff.until;
+  }
+
+  get buffLeft() {
+    return Math.max(0, this.buff.until - this.time);
+  }
+
+  // 効果が重なったら、強いほうを採る（弱い拡声器で上書きされない）
+  applyBuff({ speedUp = 0, powerUp = 0, guard = 0 }, duration) {
+    const b = this.buff;
+    if (!this.buffed) {
+      b.speedUp = b.powerUp = b.guard = 0;
+    }
+    b.speedUp = Math.max(b.speedUp, speedUp);
+    b.powerUp = Math.max(b.powerUp, powerUp);
+    b.guard = Math.max(b.guard, guard);
+    b.until = Math.max(b.until, this.time + duration);
+  }
+
+  // いま乗っている攻撃力の倍率
+  get powerScale() {
+    return 1 + (this.buffed ? this.buff.powerUp : 0);
   }
 
   look(dx, dy) {
@@ -92,7 +120,9 @@ export class Player {
     }
 
     const base = input.run ? RUN_SPEED : WALK_SPEED;
-    const speed = base * this.job.speedScale * (1 + this.speedBonus);
+    // 武器・クラスのボーナスに、拡声器の強化を足す
+    const boost = this.speedBonus + (this.buffed ? this.buff.speedUp : 0);
+    const speed = base * this.job.speedScale * (1 + boost);
     this.speed = Math.min(len, 1) * speed;
 
     const p = this.position;
@@ -127,8 +157,9 @@ export class Player {
 
   damage(amount) {
     if (this.downed || this.invulnerable) return false;
-    // クラスLv4以上は受けるダメージが減る
-    this.hp = Math.max(0, this.hp - amount * (1 - this.damageReduction));
+    // クラスLv4以上と、拡声器の効果で受けるダメージが減る
+    const guard = Math.min(0.9, this.damageReduction + (this.buffed ? this.buff.guard : 0));
+    this.hp = Math.max(0, this.hp - amount * (1 - guard));
     this.invulnUntil = this.time + PLAYER.hitInvulnTime;
     this.hurtAt = this.time;
     if (this.hp === 0) {

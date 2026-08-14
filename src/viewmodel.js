@@ -84,6 +84,41 @@ export function createItemMesh(id, gold = false, silencer = false) {
     claw.position.set(0, 0.42, -0.18);
     claw.rotation.x = 0.5;
     g.add(handle, head, claw);
+  } else if (id === 'megaphone') {
+    // ラッパ型の拡声器。太い側が前（-Z）を向く
+    const horn = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.19, 0.075, 0.34, 16, 1, true),
+      mat(0xd8dde3, 0.35)
+    );
+    horn.rotation.x = -Math.PI / 2;
+    horn.position.set(0, 0, -0.26);
+    horn.material.side = THREE.DoubleSide;
+    // ラッパのふち
+    const lip = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.016, 6, 18), mat(0xb9c0c8, 0.4));
+    lip.position.set(0, 0, -0.43);
+    // 本体
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.062, 0.2, 12), mat(0x3d444c, 0.5));
+    body.rotation.x = -Math.PI / 2;
+    body.position.set(0, 0, -0.02);
+    // 後ろのふた
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.064, 0.05, 0.06, 12), mat(0x2c3238, 0.6));
+    cap.rotation.x = -Math.PI / 2;
+    cap.position.set(0, 0, 0.1);
+    // 握り。下に伸ばして、引き金をつける
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.07), mat(0x2c3238, 0.7));
+    grip.position.set(0, -0.13, 0.02);
+    const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.02), mat(0x9aa2ab, 0.5));
+    trigger.position.set(0, -0.06, -0.04);
+    // 上のスピーカー金具と、光る小さなランプ
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, 0.1), mat(0x9aa2ab, 0.45));
+    band.position.set(0, 0.07, -0.02);
+    const lamp = new THREE.Mesh(
+      new THREE.SphereGeometry(0.018, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xff6b5a })
+    );
+    lamp.position.set(0.05, 0.045, 0.05);
+    lamp.name = 'lamp';
+    g.add(horn, lip, body, cap, grip, trigger, band, lamp);
   } else if (id === 'bandage') {
     const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.12, 12), mat(0xf2ece0, 0.95));
     roll.rotation.z = Math.PI / 2;
@@ -95,6 +130,8 @@ export function createItemMesh(id, gold = false, silencer = false) {
   g.traverse((o) => {
     if (!o.isMesh) return;
     o.castShadow = true;
+    // 光っている部品は色を変えない（金色にすると消えて見える）
+    if (o.name === 'lamp') return;
     // レベル5の金色。元の濃淡は少し残して、のっぺりしないようにする
     if (gold) {
       o.material.color.lerp(GOLD, 0.82);
@@ -184,6 +221,16 @@ export class ViewModel {
       m.rotation.y += -0.7 + swing * 2.0;
       m.rotation.z += 0.35 - swing * 0.5;
       m.rotation.x += -0.35 + swing * 0.5;
+    } else if (name === 'shout') {
+      // 拡声器：口元へ持ち上げて、声に合わせて小刻みに震わせる
+      const raise = smooth(phase(t, 0, 0.25)) - smooth(phase(t, 0.7, 1));
+      m.position.x -= raise * 0.18;
+      m.position.y += raise * 0.16;
+      m.position.z -= raise * 0.14;
+      m.rotation.y += raise * 0.3;
+      m.rotation.x += Math.sin(t * 60) * raise * 0.05;
+      const lamp = m.getObjectByName('lamp');
+      if (lamp) lamp.visible = raise < 0.5 || Math.sin(t * 40) > 0;
     } else if (name === 'swap') {
       m.position.y -= (1 - smooth(t)) * 0.5;
       m.rotation.x += (1 - smooth(t)) * 0.6;
