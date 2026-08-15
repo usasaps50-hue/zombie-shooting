@@ -74,6 +74,11 @@ export class Weapons {
       if (this.onEvent({ type: 'build', item }) === false) return;
       st.readyAt = this.time + item.cooldown;
       this.#play('swing', item.swingTime);
+    } else if (item.kind === 'magic') {
+      // ロッドの範囲魔法。撃てなかったときは待ち時間を入れない
+      if (this.onEvent({ type: 'cast', item }) === false) return;
+      st.readyAt = this.time + item.cooldown;
+      this.#play('cast', item.swingTime);
     } else if (item.kind === 'buff') {
       // 拡声器。効果がかからなかったときは、待ち時間を入れない
       if (this.onEvent({ type: 'buff', item }) === false) return;

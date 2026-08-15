@@ -24,6 +24,14 @@ export const ULTIMATES = {
     startCharge: 0,
     desc: '血のゲージが一気に満タンになり、HPも40回復する。合計200ダメージでチャージ完了。',
   },
+  necromancer: {
+    jobId: 'necromancer',
+    name: '影の軍勢',
+    charge: 'revive',
+    need: 5,
+    startCharge: 0,
+    desc: '真っ黒な影の味方を3体呼ぶ。リボーンロッドで敵を5体 味方にするとチャージ完了。',
+  },
   architect: {
     jobId: 'architect',
     name: 'ゴッドタレット',
@@ -38,6 +46,14 @@ export const BOMB = { damage: 50, radius: 4.5, speed: 17, gravity: 22 };
 
 // 犯罪者の必殺技。血のゲージを満タンにして、そのぶん体力も戻す
 export const BLOOD_FEAST = { heal: 40 };
+
+// ネクロマンサーの必殺技。真っ黒な影の味方を呼ぶ
+export const SHADOW_ARMY = {
+  count: 3,
+  hp: 50,
+  // 同時に連れて歩ける味方の数（生き返らせたぶんも含む）
+  maxMinions: 8,
+};
 
 // ゴッドタレットは運任せ。残りは失敗（チャージは消える）
 export const GOD_TURRET_ODDS = { drones: 0.3, rocket: 0.3 };

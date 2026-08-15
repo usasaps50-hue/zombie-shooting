@@ -134,6 +134,11 @@ const SKINS = {
   },
   // 地中に潜るゾンビ
   purple: { face: '#7b5aa6', dark: '#3d2a58', light: '#b39ad8', hand: '#8f6cbb', foot: '#5d4180' },
+  // ネクロマンサーが呼び出す、真っ黒な影の味方
+  shadow: {
+    face: '#1c1b22', dark: '#0d0c11', light: '#33313d', hand: '#26242e', foot: '#141319',
+    eyes: 'angry',
+  },
   // ガンマゾンビ。放射線を浴びたような黄緑
   gamma: {
     face: '#9aa84e', dark: '#4f5b24', light: '#cfdc7c', hand: '#a8b65c', foot: '#79863c',

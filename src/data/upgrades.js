@@ -61,6 +61,41 @@ export const UPGRADES = {
       { cost: 1000, gold: true, cooldown: 0.6, desc: '見た目が金色／0.6秒に1回' },
     ],
   },
+  reborn: {
+    id: 'reborn',
+    levels: [
+      { desc: '8ダメージ／5秒に1回／半径2.6m／倒すと20%で味方になる' },
+      { cost: 250, damage: 11, cooldown: 4.5, blast: 2.8, reviveChance: 0.3, desc: '11ダメージ／4.5秒に1回／半径2.8m／味方になる確率30%' },
+      { cost: 450, damage: 14, cooldown: 4.0, blast: 3.0, reviveChance: 0.35, desc: '14ダメージ／4秒に1回／半径3.0m／確率35%' },
+      { cost: 700, damage: 17, cooldown: 3.5, blast: 3.2, reviveChance: 0.4, desc: '17ダメージ／3.5秒に1回／半径3.2m／確率40%' },
+      {
+        cost: 1000,
+        gold: true,
+        damage: 20,
+        cooldown: 3.0,
+        blast: 3.5,
+        reviveChance: 0.5,
+        desc: '見た目が金色／20ダメージ／3秒に1回／半径3.5m／確率50%',
+      },
+    ],
+  },
+  death: {
+    id: 'death',
+    levels: [
+      { desc: '16ダメージ／8秒に1回／半径3.0m' },
+      { cost: 250, damage: 22, cooldown: 7.0, blast: 3.3, desc: '22ダメージ／7秒に1回／半径3.3m' },
+      { cost: 450, damage: 28, cooldown: 6.5, blast: 3.7, desc: '28ダメージ／6.5秒に1回／半径3.7m' },
+      { cost: 700, damage: 34, cooldown: 5.5, blast: 4.1, desc: '34ダメージ／5.5秒に1回／半径4.1m' },
+      {
+        cost: 1000,
+        gold: true,
+        damage: 40,
+        cooldown: 5.0,
+        blast: 4.5,
+        desc: '見た目が金色／40ダメージ／5秒に1回／半径4.5m',
+      },
+    ],
+  },
   megaphone: {
     id: 'megaphone',
     levels: [
@@ -159,6 +194,9 @@ export function upgradedItem(itemId, level) {
   if (bonus.cooldown) item.cooldown = bonus.cooldown;
   if (bonus.hpPercent) item.hpPercent = bonus.hpPercent;
   if (bonus.bloodGain) item.bloodGain = bonus.bloodGain;
+  // ロッド用。爆ぜる半径と、倒した敵が味方になる確率
+  if (bonus.blast) item.blast = bonus.blast;
+  if (bonus.reviveChance) item.reviveChance = bonus.reviveChance;
   // サイレンサーを付けると、音が届く距離が短くなる
   if (bonus.silencer) item.noise = bonus.silencer;
   return item;

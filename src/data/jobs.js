@@ -32,6 +32,17 @@ export const JOBS = {
     canRevive: false,
     color: 0x4a3f52,
   },
+  necromancer: {
+    id: 'necromancer',
+    name: 'ネクロマンサー',
+    desc: '2本のロッドで範囲魔法を撃つ。リボーンロッドで倒した敵は味方になって、ついてきて戦う。HPは低い。',
+    hp: 80,
+    speedScale: 0.95,
+    bandages: 0,
+    bandagesPerWave: 0,
+    canRevive: false,
+    color: 0x3d3357,
+  },
   architect: {
     id: 'architect',
     name: '建築士',

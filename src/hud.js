@@ -43,6 +43,9 @@ export class Hud {
     this.bloodBar = document.getElementById('blood-bar');
     this.bloodFill = document.getElementById('blood-fill');
     this.bloodText = document.getElementById('blood-text');
+    this.radar = document.getElementById('radar');
+    this.radarCanvas = document.getElementById('radar-canvas');
+    this.radarCtx = this.radarCanvas.getContext('2d');
     this.aimBtn = document.getElementById('btn-aim');
     this.waveNum = document.getElementById('wave-num');
     this.waveLeft = document.getElementById('wave-left');
@@ -174,6 +177,7 @@ export class Hud {
 
     this.#updateBuff(state.buff, state.cooldown);
     this.#updateBlood(state.blood);
+    this.#updateRadar(state.radar);
     this.#updateWave(state.waves);
     this.#updateUlt(state.ult);
     this.#updateSkill(state.skill);
@@ -223,6 +227,61 @@ export class Hud {
     this.bloodText.textContent = blood.releasing
       ? `血の解放中　${Math.round(blood.value)} / ${blood.max}　${speed}`
       : `血 ${Math.round(blood.value)} / ${blood.max}　${speed}`;
+  }
+
+  // レーダー。真上から見た形で、敵（赤）と味方（青）を点で出す
+  #updateRadar(radar) {
+    this.radar.classList.toggle('hidden', !radar);
+    if (!radar) return;
+
+    const ctx = this.radarCtx;
+    const size = this.radarCanvas.width;
+    const half = size / 2;
+    // 画面の半径ぶんが、何メートルぶんにあたるか
+    const scale = half / radar.range;
+    ctx.clearRect(0, 0, size, size);
+
+    // 目盛りの輪
+    ctx.strokeStyle = 'rgba(154, 107, 255, .35)';
+    ctx.lineWidth = 1;
+    for (const r of [0.33, 0.66, 1]) {
+      ctx.beginPath();
+      ctx.arc(half, half, half * r - 1, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // 自分は真ん中。向いている方向がいつも上になるよう回して描く
+    const cos = Math.cos(radar.yaw);
+    const sin = Math.sin(radar.yaw);
+    const plot = (dx, dz) => {
+      // -Z が前。画面では上向きにしたいので、回してから y を反転する
+      const x = dx * cos - dz * sin;
+      const z = dx * sin + dz * cos;
+      return [half + x * scale, half + z * scale];
+    };
+
+    const dot = (dx, dz, color, size2) => {
+      const d = Math.hypot(dx, dz);
+      if (d > radar.range) return;
+      const [px, py] = plot(dx, dz);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(px, py, size2, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    for (const e of radar.enemies) dot(e.x, e.z, '#ff6b6b', 3);
+    for (const a of radar.allies) dot(a.x, a.z, '#6bd8ff', 3);
+    for (const m of radar.mates) dot(m.x, m.z, '#9aff8f', 3.5);
+
+    // 自分（上向きの三角）
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(half, half - 5);
+    ctx.lineTo(half - 4, half + 4);
+    ctx.lineTo(half + 4, half + 4);
+    ctx.closePath();
+    ctx.fill();
   }
 
   #updateUlt(ult) {

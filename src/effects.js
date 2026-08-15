@@ -269,6 +269,102 @@ export class Effects {
     });
   }
 
+  // ロッドの範囲魔法。地面に魔法陣が浮かんで、光の柱が立つ
+  magicBlast(position, radius, color = 0x6bd8ff) {
+    const flat = (geometry, c, opacity) => {
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+        color: c, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide,
+      }));
+      mesh.rotation.x = -Math.PI / 2;
+      return mesh;
+    };
+
+    const group = new THREE.Group();
+    group.position.set(position.x, position.y + 0.05, position.z);
+
+    const rim = flat(new THREE.RingGeometry(radius * 0.9, radius, 32), color, 0.9);
+    const inner = flat(new THREE.RingGeometry(radius * 0.45, radius * 0.52, 24), color, 0.7);
+    const disc = flat(new THREE.CircleGeometry(radius, 28), color, 0.22);
+    // 魔法陣らしい放射線
+    const spokes = [];
+    for (let i = 0; i < 6; i++) {
+      const spoke = flat(new THREE.PlaneGeometry(radius * 1.9, 0.06), color, 0.6);
+      spoke.rotation.z = (i / 6) * Math.PI;
+      spokes.push(spoke);
+      group.add(spoke);
+    }
+    // 立ちのぼる光の柱
+    const pillar = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius * 0.7, radius * 0.95, 3.4, 16, 1, true),
+      new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide,
+      })
+    );
+    pillar.position.y = 1.7;
+    // はじける光の粒
+    const motes = [];
+    for (let i = 0; i < 12; i++) {
+      const mote = new THREE.Mesh(
+        this.flashCoreGeo,
+        new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false })
+      );
+      const angle = (i / 12) * Math.PI * 2;
+      motes.push({ mote, angle, up: 1.4 + Math.random() * 1.8, out: radius * (0.4 + Math.random() * 0.6) });
+      group.add(mote);
+    }
+
+    group.add(rim, inner, disc, pillar);
+    this.#add(group, 0.7, 1, 0, (p) => {
+      const fade = 1 - p;
+      rim.scale.setScalar(0.3 + p * 0.75);
+      rim.material.opacity = fade * 0.9;
+      inner.scale.setScalar(0.2 + p * 1.1);
+      inner.material.opacity = fade * 0.7;
+      inner.rotation.z += 0.08;
+      disc.scale.setScalar(Math.min(1, p * 2.2));
+      disc.material.opacity = fade * 0.28;
+      for (const spoke of spokes) {
+        spoke.scale.setScalar(0.2 + p * 0.9);
+        spoke.material.opacity = fade * 0.55;
+      }
+      pillar.scale.set(0.5 + p * 0.7, 1 + p * 0.4, 0.5 + p * 0.7);
+      pillar.material.opacity = fade * 0.32;
+      for (const m of motes) {
+        const r = p * m.out;
+        m.mote.position.set(Math.sin(m.angle) * r, Math.sin(p * Math.PI) * m.up, Math.cos(m.angle) * r);
+        m.mote.material.opacity = fade;
+      }
+    });
+  }
+
+  // 敵が味方として起き上がるときの、魂が吸い込まれる演出
+  raise(position, color = 0x6bd8ff) {
+    const group = new THREE.Group();
+    group.position.set(position.x, position.y, position.z);
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.8, 3.0, 12, 1, true),
+      new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide,
+      })
+    );
+    beam.position.y = 1.5;
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.5, 0.9, 20),
+      new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide,
+      })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.06;
+    group.add(beam, ring);
+    this.#add(group, 0.9, 1, 0, (p) => {
+      beam.scale.set(1 - p * 0.4, 1 + p * 0.5, 1 - p * 0.4);
+      beam.material.opacity = (1 - p) * 0.55;
+      ring.scale.setScalar(1 + p * 1.6);
+      ring.material.opacity = (1 - p) * 0.8;
+    });
+  }
+
   swingArc(position, yaw, radius, arc) {
     const mesh = new THREE.Mesh(
       new THREE.RingGeometry(radius * 0.72, radius, 28, 1, Math.PI / 2 - arc / 2, arc),

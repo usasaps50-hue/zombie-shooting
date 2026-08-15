@@ -77,6 +77,37 @@ export const ITEMS = {
     jobOnly: 'criminal',
     icon: '🔪',
   },
+  // ネクロマンサーの2本のロッド。どちらも狙った所で爆ぜる範囲魔法を撃つ。
+  // リボーンロッドで倒した敵は、確率で味方として起き上がる
+  reborn: {
+    id: 'reborn',
+    name: 'リボーンロッド',
+    kind: 'magic',
+    damage: 8,
+    // 魔法が爆ぜる半径
+    blast: 2.6,
+    cooldown: 5.0,
+    swingTime: 0.55,
+    range: 26,
+    // 倒した敵が味方になる確率
+    reviveChance: 0.2,
+    noise: 14,
+    jobOnly: 'necromancer',
+    icon: '🪄',
+  },
+  death: {
+    id: 'death',
+    name: 'デスロッド',
+    kind: 'magic',
+    damage: 16,
+    blast: 3.0,
+    cooldown: 8.0,
+    swingTime: 0.55,
+    range: 26,
+    noise: 20,
+    jobOnly: 'necromancer',
+    icon: '💀',
+  },
   // 攻撃はできないが、近くの仲間（と自分）をまとめて強くする
   megaphone: {
     id: 'megaphone',
@@ -95,6 +126,8 @@ export const ITEMS = {
   },
 };
 
-export const SELECTABLE_ITEMS = ['pistol', 'ak47', 'shovel', 'megaphone', 'knife', 'hammer'];
+export const SELECTABLE_ITEMS = [
+  'pistol', 'ak47', 'shovel', 'megaphone', 'knife', 'reborn', 'death', 'hammer',
+];
 // 持てる数はクラスのレベルで変わる（progress.js の maxSlots）
 export const BASE_SLOTS = 3;

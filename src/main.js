@@ -28,10 +28,13 @@ import { EnemyShots } from './enemyshots.js';
 import { ITEMS } from './data/items.js';
 import { JOBS, PLAYER, ENEMIES } from './data/jobs.js';
 import { TURRET, MATERIALS } from './data/builds.js';
-import { ULTIMATES, HOSPITAL, DRONE, GOD_TURRET_ODDS, BLOOD_FEAST } from './data/ultimates.js';
+import {
+  ULTIMATES, HOSPITAL, DRONE, GOD_TURRET_ODDS, BLOOD_FEAST, SHADOW_ARMY,
+} from './data/ultimates.js';
 import { ARMOR_GUN_REDUCTION } from './data/classes.js';
 import { IS_TOUCH, QUALITY } from './device.js';
 import { sfx } from './audio.js';
+import { Minions, MINION } from './minion.js';
 
 const canvas = document.getElementById('game');
 
@@ -95,6 +98,8 @@ const projectiles = new Projectiles(scene, effects);
 const drones = new Drones(scene);
 // ガンマゾンビの弾と、弓スケルトンの矢
 const enemyShots = new EnemyShots(scene);
+// ネクロマンサーが従える味方
+const minions = new Minions(scene, SHADOW_ARMY.maxMinions);
 
 const muzzle = new THREE.PointLight(0xffd9a0, 0, 8);
 scene.add(muzzle);
@@ -124,8 +129,9 @@ const FOV_AIM = 42;
 
 // HUDと店で使う武器アイコン。実際の3Dモデルを描いた画像（金色版も作っておく）
 const ITEM_ICONS = makeItemIcons([
-  'pistol', 'ak47', 'shovel', 'hammer', 'bandage', 'megaphone', 'knife',
+  'pistol', 'ak47', 'shovel', 'hammer', 'bandage', 'megaphone', 'knife', 'reborn', 'death',
   'pistol:gold', 'ak47:gold', 'shovel:gold', 'megaphone:gold', 'knife:gold',
+  'reborn:gold', 'death:gold',
 ]);
 hud.setIcons(ITEM_ICONS);
 
@@ -216,6 +222,7 @@ function startGame(loadout) {
   builder.clear();
   projectiles.clear();
   enemyShots.clear();
+  minions.clear();
   drones.clear();
   builder.materials = { ...(job.materials ?? {}) };
   waves.reset();
@@ -281,6 +288,7 @@ function toLobby() {
   leaveRoom();
   projectiles.clear();
   enemyShots.clear();
+  minions.clear();
   drones.clear();
   scene.add(camera);
   document.body.classList.remove('hub');
@@ -298,6 +306,7 @@ document.getElementById('btn-tolobby').addEventListener('click', toLobby);
 document.getElementById('btn-tohub').addEventListener('click', () => {
   projectiles.clear();
   enemyShots.clear();
+  minions.clear();
   drones.clear();
   builder.clear();
   playerBody.setVisible(false);
@@ -341,10 +350,66 @@ function onWeaponEvent(ev) {
   }
   else if (ev.type === 'build') return build();
   else if (ev.type === 'buff') return useMegaphone(ev.item);
+  else if (ev.type === 'cast') return castRod(ev.item);
   else if (ev.type === 'cycleBuild') {
     const def = builder.cycleType(1);
     hud.setToast(`${def.name}を選択`, 1.0);
   }
+}
+
+// ロッドの範囲魔法。見ている先で爆ぜて、まわりのゾンビをまとめて削る
+function castRod(item) {
+  const { player } = game;
+  if (player.downed) return false;
+  const now = performance.now() / 1000;
+  const dir = camera.getWorldDirection(new THREE.Vector3());
+
+  // 狙った先。ゾンビに当たればそこ、外れたら射程いっぱいの地面
+  raycaster.set(camera.position, dir);
+  raycaster.far = item.range;
+  const hitboxes = enemies.filter((e) => e.alive).map((e) => e.hitbox);
+  const hit = raycaster.intersectObjects(hitboxes, false)[0];
+  const spot = hit
+    ? hit.point.clone()
+    : camera.position.clone().addScaledVector(dir, item.range);
+  spot.y = floorHeight(colliders, spot.x, spot.z, spot.y + 0.4);
+
+  const reborn = item.id === 'reborn';
+  effects.magicBlast(spot, item.blast, reborn ? 0x6bd8ff : 0xb45cff);
+  sfx.play('cast');
+  sfx.playAt('blast', spot);
+  makeNoise(camera.position.clone(), item.noise ?? 0, now);
+
+  let hits = 0;
+  for (const enemy of enemies) {
+    if (!enemy.alive) continue;
+    if (enemy.position.distanceTo(spot) > item.blast) continue;
+    // 倒したときに味方として起こしたいので、倒れる前の姿を控えておく
+    const def = enemy.def;
+    const spawn = enemy.position.clone();
+    const killed = damageEnemy(enemy, item.damage, now, item);
+    if (killed && reborn) tryRevive(def, spawn, item);
+    hits++;
+  }
+  if (hits) hud.setToast(`${item.name} — ${hits}体に ${item.damage}ダメージ`, 1.2);
+  return true;
+}
+
+// リボーンロッドで倒した敵を、確率で味方として起こす
+function tryRevive(def, position, item) {
+  if (Math.random() >= (item.reviveChance ?? 0)) return false;
+  minions.add({
+    skin: def.skin,
+    armor: def.armor,
+    outfit: def.outfit,
+    maxHp: Math.max(1, Math.round(def.hp / 2)),
+  }, position);
+  effects.raise(position);
+  sfx.playAt('raise', position);
+  // 必殺技のゲージは「味方にした数」で貯まる
+  game?.ult.add('revive', 1);
+  hud.setToast(`${def.name}が味方になった！（味方 ${minions.count}体）`, 1.8);
+  return true;
 }
 
 // 拡声器。自分と、声の届く仲間をまとめて強くする
@@ -560,7 +625,13 @@ function setupNet() {
   net.on('kill', (msg) => {
     if (msg.by !== net.id) return;
     const def = ENEMIES[msg.t];
-    if (def) awardKill(def, game?.weapons?.current ?? null);
+    if (!def) return;
+    const weapon = game?.weapons?.current ?? null;
+    awardKill(def, weapon);
+    // リボーンロッドで倒したのなら、こちらでも味方として起こす
+    if (weapon?.id === 'reborn' && enemies[msg.i]) {
+      tryRevive(def, enemies[msg.i].position.clone(), weapon);
+    }
   });
 
   // 子から届いた「ここに建てたい」。置けるかどうかは親が決める
@@ -864,6 +935,22 @@ const ULT_ACTIONS = {
     return true;
   },
 
+  // 真っ黒な影の味方を3体呼ぶ
+  necromancer: () => {
+    const { player } = game;
+    const feet = new THREE.Vector3(player.position.x, player.position.y - EYE_HEIGHT, player.position.z);
+    for (let i = 0; i < SHADOW_ARMY.count; i++) {
+      const angle = (i / SHADOW_ARMY.count) * Math.PI * 2;
+      const spot = feet.clone().add(new THREE.Vector3(Math.sin(angle) * 2.2, 0, Math.cos(angle) * 2.2));
+      spot.y = floorHeight(colliders, spot.x, spot.z, feet.y + 0.4);
+      minions.add({ maxHp: SHADOW_ARMY.hp, black: true }, spot);
+      effects.raise(spot, 0x9a6bff);
+    }
+    sfx.play('raise');
+    hud.setToast(`${ULTIMATES.necromancer.name}！ 影を${SHADOW_ARMY.count}体 呼んだ（味方 ${minions.count}体）`, 2.6);
+    return true;
+  },
+
   medic: () => {
     if (!placeUltStructure('hospital', 4.2)) return false;
     hud.setToast(`${ULTIMATES.medic.name}を建てた！ 近くにいると毎秒${HOSPITAL.healPerSecond}回復`, 2.4);
@@ -1043,6 +1130,7 @@ function slamTargets() {
     for (const mate of teammates) spots.push(mate.position);
   }
   spots.push(...drones.positions());
+  spots.push(...minions.positions());
   if (game && !paused && !game.player.downed) {
     spots.push(new THREE.Vector3(game.player.position.x, 0, game.player.position.z));
   }
@@ -1236,9 +1324,11 @@ function frame() {
     structures: builder.structures,
     players: targets,
     onHitPlayer: (enemy, amount, target) => {
-      // 殴られたのが自分なら自分で減らし、他の人ならその人に知らせる
       sfx.playAt('hit', enemy.position);
-      if (target?.local) applyDamage(amount);
+      // 殴られたのが味方（ネクロマンサーの手下）なら、その子が受ける
+      if (target?.minion) target.minion.damage(amount);
+      // 自分なら自分で減らし、他の人ならその人に知らせる
+      else if (target?.local) applyDamage(amount);
       else if (target) net.send('dmg', { to: target.id, d: amount });
       if (enemy.def.crackRadius) smashGround(enemy);
       // ミュータントは殴った範囲のドローンも巻き込む
@@ -1313,6 +1403,23 @@ function frame() {
       });
     }
     else if (s.def.kind === 'hospital') healAround(s, dt);
+  }
+
+  // ネクロマンサーの味方。近くの敵に襲いかかり、いなければ主人についてまわる
+  if (game && !paused) {
+    const owner = game.player.downed
+      ? null
+      : new THREE.Vector3(game.player.position.x, game.player.position.y - EYE_HEIGHT, game.player.position.z);
+    minions.update(dt, now, {
+      owner,
+      enemies,
+      colliders,
+      structures: builder.structures,
+      onAttack: (minion, target, damage) => {
+        sfx.playAt('hit', minion.position, { volume: 0.7 });
+        damageEnemy(target, damage, now, null);
+      },
+    });
   }
 
   // 爆発のダメージも親が決める。子の画面では火の玉だけ出す
@@ -1440,6 +1547,7 @@ function frame() {
       blood: game.skill?.kind === 'bloodRelease'
         ? { value: player.blood, max: BLOOD.max, speedAtMax: BLOOD.speedAtMax, releasing: player.releasing }
         : null,
+      radar: radarData(player),
     });
   } else if (game) {
     hud.update(dt, {
@@ -1455,6 +1563,7 @@ function frame() {
       buff: null,
       cooldown: 0,
       blood: null,
+      radar: null,
     });
   } else {
     camera.position.set(0, EYE_HEIGHT, 8);
@@ -1510,6 +1619,25 @@ function shotTargets(players) {
   return list;
 }
 
+// 影の軍勢がいる間だけ、敵と味方の位置が分かる。
+// 自分から見た相対位置（メートル）を渡す
+const RADAR_RANGE = 45;
+function radarData(player) {
+  const hasShadow = minions.list.some((m) => m.black && m.alive);
+  if (!hasShadow) return null;
+  const px = player.position.x;
+  const pz = player.position.z;
+  const rel = (v) => ({ x: v.x - px, z: v.z - pz });
+  return {
+    range: RADAR_RANGE,
+    // 前を上にするための回転。カメラの向きと合わせる
+    yaw: player.yaw,
+    enemies: enemies.filter((e) => e.active && e.alive && e.root.visible).map((e) => rel(e.position)),
+    allies: minions.list.filter((m) => m.alive).map((m) => rel(m.position)),
+    mates: [...remotes.values()].filter((r) => r.placed && !r.downed).map((r) => rel(r.position)),
+  };
+}
+
 // ドローンが回る中心。持ち主の居場所を返す
 function droneAnchor(ownerId) {
   if (!ownerId || ownerId === net.id) {
@@ -1534,6 +1662,15 @@ function collectTargets() {
       id: remote.id,
       position: remote.aimPoint(),
       downed: false,
+    });
+  }
+  // ネクロマンサーの味方も、ゾンビから見れば殴る相手
+  for (const minion of minions.targets()) {
+    playerTargets.push({
+      id: 'minion',
+      position: minion.position,
+      downed: false,
+      minion,
     });
   }
   return playerTargets;

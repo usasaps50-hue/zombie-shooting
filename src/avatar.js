@@ -92,6 +92,21 @@ function createHat(jobId) {
     const scarf = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.3), mat(0x8a2b2b, 0.85));
     scarf.position.y = -0.13;
     g.add(hood, brim, slit, scarf);
+  } else if (jobId === 'necromancer') {
+    // とがったフードと、顔にかかる影
+    const hood = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.34, 6), mat(0x3a3350, 0.9));
+    hood.position.y = 0.26;
+    const rim = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.1, 0.32), mat(0x2b2640, 0.9));
+    rim.position.y = 0.1;
+    // フードの奥で光る目
+    const glow = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.03, 0.012),
+      new THREE.MeshBasicMaterial({ color: 0x9a6bff })
+    );
+    glow.position.set(0, 0.08, 0.155);
+    const cloak = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.08, 0.34), mat(0x322c48, 0.9));
+    cloak.position.y = -0.13;
+    g.add(hood, rim, glow, cloak);
   } else if (jobId === 'architect') {
     const shell = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(0xf2c02e));
     shell.position.y = 0.14;
@@ -245,6 +260,8 @@ export class Avatar {
       : this.itemId ? 'gun' : null;
     // ナイフは短いので、腕をもう少し下げて持たせる
     const knife = this.itemId === 'knife';
+    // 杖は両手で持つ
+    const rod = this.itemId === 'reborn' || this.itemId === 'death';
     // 拡声器は口元に構えるので、腕をもっと上げる
     const megaphone = this.itemId === 'megaphone';
     let armR = holding ? HOLD_ARM_X[holding] : -step;
@@ -287,6 +304,17 @@ export class Avatar {
       armL = 0;
       armLz = 0;
       this.body.rotation.y = Math.sin(t * Math.PI) * 0.08;
+    } else if (name === 'cast') {
+      // 杖を高く掲げてから振り下ろす
+      const raise = smooth(phase(t, 0, 0.45));
+      const swing = smooth(phase(t, 0.5, 0.72));
+      const back = smooth(phase(t, 0.75, 1));
+      const up = raise - back;
+      armR = -0.5 - up * 2.2 + swing * 1.1;
+      armRz = -0.2 - up * 0.2;
+      armL = -0.4 - up * 1.2 + swing * 0.6;
+      armLz = 0.3;
+      this.body.rotation.x = -up * 0.15 + swing * 0.3;
     } else if (name === 'shout') {
       // 拡声器を口元へ掲げて呼びかける
       const raise = smooth(phase(t, 0, 0.25)) - smooth(phase(t, 0.7, 1));
@@ -309,8 +337,15 @@ export class Avatar {
     // 拡声器を持っているだけのときも、少し高く構えさせる
     if (megaphone && name !== 'shout') armR -= 0.35;
     if (knife && name !== 'swing') armR += 0.35;
+    // 杖はシャベルと同じで、斜めに立てて持つ
+    if (rod && name !== 'cast') {
+      armR = -0.6;
+      armRz = -0.4;
+      armL = -0.5;
+      armLz = 0.35;
+    }
 
-    if (name !== 'swing' && name !== 'wave' && name !== 'spin' && name !== 'shout') {
+    if (name !== 'swing' && name !== 'wave' && name !== 'spin' && name !== 'shout' && name !== 'cast') {
       this.body.rotation.y = THREE.MathUtils.lerp(this.body.rotation.y, 0, dt * 10);
     }
 

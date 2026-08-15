@@ -284,6 +284,27 @@ class Sfx {
         }
         break;
 
+      // 魔法
+      case 'cast':
+        this.#env(gain, at, 0.01, 0.5, 0.7 * v);
+        this.#tone('sine', 300, 1400, at, 0.3, gain);
+        this.#tone('triangle', 150, 700, at, 0.45, gain);
+        this.#noiseSource(at, 0.45, gain, { type: 'bandpass', from: 600, to: 3200, q: 1.6 });
+        break;
+      case 'blast':
+        this.#env(gain, at, 0.005, 0.55, 0.9 * v);
+        this.#noiseSource(at, 0.55, gain, { type: 'lowpass', from: 3200, to: 200 });
+        this.#tone('sine', 420, 60, at, 0.4, gain);
+        this.#tone('square', 900, 200, at, 0.2, gain);
+        break;
+      case 'raise':
+        for (let i = 0; i < 4; i++) {
+          const t = at + i * 0.08;
+          this.#env(gain, t, 0.015, 0.5, 0.42 * v);
+          this.#tone('sine', 260 + i * 130, 520 + i * 200, t, 0.45, gain);
+        }
+        break;
+
       // 建てる・買う・画面
       case 'build':
         this.#env(gain, at, 0.002, 0.1, 0.6 * v);

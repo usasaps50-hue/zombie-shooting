@@ -103,6 +103,55 @@ export function createItemMesh(id, gold = false, silencer = false) {
     const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 6), mat(0x8d949d, 0.4));
     pommel.position.set(0, 0.02, 0.14);
     g.add(blade, tip, stain, guard, grip, pommel);
+  } else if (id === 'reborn' || id === 'death') {
+    // 杖。長い柄の先に、光る玉（リボーン）かドクロ（デス）が乗る
+    const reborn = id === 'reborn';
+    const glowColor = reborn ? 0x6bd8ff : 0xb45cff;
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.026, 0.034, 1.0, 8),
+      mat(reborn ? 0x5b4a6b : 0x2e2a35, 0.85)
+    );
+    shaft.position.set(0, 0.05, 0);
+    // 柄に巻いた布
+    const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.18, 8), mat(reborn ? 0x3f7f8f : 0x4a2a5a, 0.9));
+    wrap.position.set(0, -0.1, 0);
+    // 先端の爪。玉を抱えこむ形
+    const claws = [];
+    for (let i = 0; i < 3; i++) {
+      const claw = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.2, 0.03), mat(0x8d949d, 0.4));
+      const a = (i / 3) * Math.PI * 2;
+      claw.position.set(Math.sin(a) * 0.075, 0.56, Math.cos(a) * 0.075);
+      claw.rotation.set(Math.cos(a) * 0.35, 0, -Math.sin(a) * 0.35);
+      claws.push(claw);
+    }
+    const core = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.085, reborn ? 1 : 0),
+      new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.95 })
+    );
+    core.position.set(0, 0.63, 0);
+    core.name = 'lamp';
+    // まわりのぼんやりした光
+    const halo = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.15, 0),
+      new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.22, depthWrite: false })
+    );
+    halo.position.copy(core.position);
+    halo.name = 'lamp';
+    const bottom = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.1, 6), mat(0x8d949d, 0.4));
+    bottom.position.set(0, -0.5, 0);
+    bottom.rotation.x = Math.PI;
+    g.add(shaft, wrap, core, halo, bottom, ...claws);
+    if (!reborn) {
+      // デスロッドは先端にドクロを足す
+      const skull = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.13, 0.13), mat(0xded7c2, 0.85));
+      skull.position.set(0, 0.63, 0);
+      const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.04, 0.12), mat(0xbfb8a2, 0.85));
+      jaw.position.set(0, 0.55, 0.005);
+      g.add(skull, jaw);
+      core.position.set(0, 0.645, 0.07);
+      core.scale.setScalar(0.45);
+      halo.scale.setScalar(0.8);
+    }
   } else if (id === 'megaphone') {
     // ラッパ型の拡声器。太い側が前（-Z）を向く
     const horn = new THREE.Mesh(
@@ -187,7 +236,8 @@ export class ViewModel {
     const m = this.current;
     const sway = moveAmount * 0.02;
 
-    const longHandled = this.itemId === 'shovel' || this.itemId === 'hammer';
+    const longHandled = this.itemId === 'shovel' || this.itemId === 'hammer'
+      || this.itemId === 'reborn' || this.itemId === 'death';
     const base = longHandled
       ? { pos: new THREE.Vector3(0.45, -0.5, -0.8), rot: new THREE.Euler(2.7, -0.3, 0.7) }
       : { pos: new THREE.Vector3(0.3, -0.26, -0.7), rot: new THREE.Euler(0.02, -0.28, 0.05) };
@@ -240,6 +290,22 @@ export class ViewModel {
       m.rotation.y += -0.7 + swing * 2.0;
       m.rotation.z += 0.35 - swing * 0.5;
       m.rotation.x += -0.35 + swing * 0.5;
+    } else if (name === 'cast') {
+      // 杖を掲げて、先端の玉が光ってから振り下ろす
+      const raise = smooth(phase(t, 0, 0.45));
+      const swing = smooth(phase(t, 0.5, 0.72));
+      const back = smooth(phase(t, 0.75, 1));
+      const up = raise - back;
+      m.position.y += up * 0.42 - swing * 0.3;
+      m.position.z += up * 0.12;
+      m.position.x -= up * 0.1;
+      m.rotation.x += -up * 0.8 + swing * 1.5;
+      m.rotation.z += up * 0.3;
+      // 玉は溜めるほど大きく光る
+      const glow = 1 + (raise - swing) * 1.6;
+      for (const o of m.children) {
+        if (o.name === 'lamp') o.scale.setScalar(glow);
+      }
     } else if (name === 'shout') {
       // 拡声器：口元へ持ち上げて、声に合わせて小刻みに震わせる
       const raise = smooth(phase(t, 0, 0.25)) - smooth(phase(t, 0.7, 1));
