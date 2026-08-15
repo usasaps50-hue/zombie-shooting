@@ -117,6 +117,9 @@ export class Minion {
     this.#refresh();
     if (this.alive) {
       this.zombie.setMode('hit');
+      // 振りかけていた攻撃は中断される
+      this.attacking = false;
+      this.landed = false;
       return false;
     }
     this.zombie.setMode('death');
@@ -201,24 +204,31 @@ export class Minion {
       return;
     }
 
-    // 攻撃中は足を止めて、当たる瞬間にダメージを出す
+    // 攻撃中は足を止めて、当たる瞬間にダメージを出す。
+    // 振っている途中で殴られるとモーションが「被弾」に変わり、
+    // 「振り終わり」が来なくなるので、そのときは仕切り直す
     if (this.attacking) {
-      if (!this.landed && this.zombie.attackLanded) {
-        this.landed = true;
-        if (this.target?.alive) onAttack(this, this.target, MINION.damage);
-      }
-      if (this.zombie.attackFinished) {
+      if (this.zombie.mode !== 'attack') {
         this.attacking = false;
-        this.nextAttackAt = now + MINION.attackCooldown;
+        this.nextAttackAt = now + MINION.attackCooldown * 0.5;
+      } else {
+        if (!this.landed && this.zombie.attackLanded) {
+          this.landed = true;
+          if (this.target?.alive) onAttack(this, this.target, MINION.damage);
+        }
+        if (this.zombie.attackFinished) {
+          this.attacking = false;
+          this.nextAttackAt = now + MINION.attackCooldown;
+        }
+        this.root.rotation.y = this.facing + Math.PI;
+        this.zombie.update(dt);
+        this.#spin(dt);
+        return;
       }
-      this.root.rotation.y = this.facing + Math.PI;
-      this.zombie.update(dt);
-      this.#spin(dt);
-      return;
     }
 
     // 敵を探す。見つからなければ主人のところへ戻る
-    if (!this.target || !this.target.active || !this.target.alive
+    if (!this.target || !this.target.active || !this.target.alive || this.target.invulnerable
       || this.target.position.distanceTo(p) > MINION.sight * 1.4) {
       this.target = this.#findEnemy(enemies, p);
     }
@@ -283,7 +293,8 @@ export class Minion {
 
 // 味方をまとめて面倒みる入れ物
 export class Minions {
-  constructor(scene, max = 8) {
+  // max を渡さなければ、連れて歩ける数に上限はない
+  constructor(scene, max = Infinity) {
     this.scene = scene;
     this.max = max;
     this.list = [];
@@ -293,7 +304,7 @@ export class Minions {
     return this.list.length;
   }
 
-  // 上限を超えたぶんは、古いものから消えていく
+  // 上限を決めているときだけ、古いものから消えていく
   add(options, position) {
     if (this.list.length >= this.max) this.list.shift().dispose();
     const minion = new Minion(this.scene, options).spawnAt(position);

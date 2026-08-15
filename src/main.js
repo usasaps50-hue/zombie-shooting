@@ -98,8 +98,8 @@ const projectiles = new Projectiles(scene, effects);
 const drones = new Drones(scene);
 // ガンマゾンビの弾と、弓スケルトンの矢
 const enemyShots = new EnemyShots(scene);
-// ネクロマンサーが従える味方
-const minions = new Minions(scene, SHADOW_ARMY.maxMinions);
+// ネクロマンサーが従える味方。連れて歩ける数に上限はない
+const minions = new Minions(scene);
 
 const muzzle = new THREE.PointLight(0xffd9a0, 0, 8);
 scene.add(muzzle);

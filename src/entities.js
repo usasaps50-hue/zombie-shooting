@@ -276,6 +276,9 @@ export class Enemy {
     if (this.alive) {
       this.zombie.setMode('hit');
       this.shooting = false;
+      // 振りかけていた攻撃は中断される
+      this.attacking = false;
+      this.landed = false;
     } else {
       // スケルトンは、1回だけ骨を組み直して起き上がることがある
       this.willRevive = !this.revived
@@ -360,6 +363,13 @@ export class Enemy {
 
   // 止まって腕を振り下ろし、当たる瞬間に一度だけダメージを出す
   #attack(now, onLand, onSwing) {
+    // 振っている途中で撃たれると、モーションが「被弾」に切り替わって
+    // 「振り終わり」が来なくなる。中断されたら仕切り直す
+    if (this.attacking && this.zombie.mode !== 'attack') {
+      this.attacking = false;
+      this.landed = false;
+      this.nextAttackAt = Math.max(this.nextAttackAt, now + 0.3);
+    }
     if (!this.attacking) {
       if (now < this.nextAttackAt) {
         this.zombie.setMode('idle');

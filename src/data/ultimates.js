@@ -51,8 +51,6 @@ export const BLOOD_FEAST = { heal: 40 };
 export const SHADOW_ARMY = {
   count: 3,
   hp: 50,
-  // 同時に連れて歩ける味方の数（生き返らせたぶんも含む）
-  maxMinions: 8,
 };
 
 // ゴッドタレットは運任せ。残りは失敗（チャージは消える）
