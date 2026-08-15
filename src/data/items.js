@@ -86,8 +86,9 @@ export const ITEMS = {
     damage: 8,
     // 魔法が爆ぜる半径
     blast: 2.6,
-    cooldown: 5.0,
-    swingTime: 0.55,
+    cooldown: 1.4,
+    // 連射するので、振りのモーションは短くする
+    swingTime: 0.4,
     range: 26,
     // 倒した敵が味方になる確率
     reviveChance: 0.2,

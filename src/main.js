@@ -358,24 +358,59 @@ function onWeaponEvent(ev) {
 }
 
 // ロッドの範囲魔法。見ている先で爆ぜて、まわりのゾンビをまとめて削る
+// 照準の先で最初にぶつかる場所。ゾンビ・壁・建てたもの・地面のうち
+// 一番手前を選ぶ。これをしないと、足元を見て撃っても遠くへ飛んでしまう
+const aimRay = new THREE.Ray();
+const aimHit = new THREE.Vector3();
+function aimPoint(dir, range) {
+  const from = camera.position;
+  let best = range;
+
+  // ゾンビ
+  raycaster.set(from, dir);
+  raycaster.far = range;
+  const hit = raycaster.intersectObjects(enemies.filter((e) => e.alive).map((e) => e.hitbox), false)[0];
+  if (hit) best = Math.min(best, hit.distance);
+
+  // 壁・建物・床
+  aimRay.set(from, dir);
+  for (const c of colliders) {
+    if (aimRay.intersectBox(c, aimHit)) best = Math.min(best, aimHit.distanceTo(from));
+  }
+  for (const s of builder.structures) {
+    if (s.alive && aimRay.intersectBox(s.box, aimHit)) best = Math.min(best, aimHit.distanceTo(from));
+  }
+
+  // 地面（当たり判定を持っていないので、y=0 の面として自分で見る）
+  if (dir.y < -0.001) best = Math.min(best, from.y / -dir.y);
+
+  return from.clone().addScaledVector(dir, Math.max(0.6, best));
+}
+
+// 杖の先。ここから魔法が飛んでいくように見せる
+function rodTip(dir) {
+  const right = new THREE.Vector3().crossVectors(dir, WORLD_UP).normalize();
+  return camera.position.clone()
+    .addScaledVector(right, 0.22)
+    .addScaledVector(WORLD_UP, -0.08)
+    .addScaledVector(dir, 1.1);
+}
+
 function castRod(item) {
   const { player } = game;
   if (player.downed) return false;
   const now = performance.now() / 1000;
   const dir = camera.getWorldDirection(new THREE.Vector3());
 
-  // 狙った先。ゾンビに当たればそこ、外れたら射程いっぱいの地面
-  raycaster.set(camera.position, dir);
-  raycaster.far = item.range;
-  const hitboxes = enemies.filter((e) => e.alive).map((e) => e.hitbox);
-  const hit = raycaster.intersectObjects(hitboxes, false)[0];
-  const spot = hit
-    ? hit.point.clone()
-    : camera.position.clone().addScaledVector(dir, item.range);
-  spot.y = floorHeight(colliders, spot.x, spot.z, spot.y + 0.4);
+  // 見ている先の、ぶつかる所を狙う
+  const spot = aimPoint(dir, item.range);
+  // 魔法陣は足元に描きたいので、その真下の床に下ろす
+  spot.y = floorHeight(colliders, spot.x, spot.z, spot.y + 0.6);
 
   const reborn = item.id === 'reborn';
-  effects.magicBlast(spot, item.blast, reborn ? 0x6bd8ff : 0xb45cff);
+  const color = reborn ? 0x6bd8ff : 0xb45cff;
+  effects.magicBolt(rodTip(dir), spot, color);
+  effects.magicBlast(spot, item.blast, color);
   sfx.play('cast');
   sfx.playAt('blast', spot);
   makeNoise(camera.position.clone(), item.noise ?? 0, now);

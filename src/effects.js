@@ -269,7 +269,44 @@ export class Effects {
     });
   }
 
-  // ロッドの範囲魔法。地面に魔法陣が浮かんで、光の柱が立つ
+  // 杖の先から狙った場所まで、魔法が飛んでいく筋。
+  // これがないと「どこを撃ったのか」が分からない
+  magicBolt(from, to, color = 0x6bd8ff) {
+    const dir = to.clone().sub(from);
+    const len = dir.length();
+    if (len < 0.05) return;
+
+    const group = new THREE.Group();
+    group.position.copy(from);
+    group.quaternion.setFromUnitVectors(UP, dir.clone().divideScalar(len));
+
+    // 芯の筋と、まわりのぼんやりした光
+    const core = new THREE.Mesh(this.tracerGeo, new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    }));
+    core.scale.set(1.6, len, 1.6);
+    const glow = new THREE.Mesh(this.tracerGeo, new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide,
+    }));
+    glow.scale.set(5, len, 5);
+    // 杖の先の光
+    const spark = new THREE.Mesh(this.flashCoreGeo, new THREE.MeshBasicMaterial({
+      color, transparent: true, depthWrite: false,
+    }));
+    spark.scale.setScalar(3.5);
+    group.add(core, glow, spark);
+
+    this.#add(group, 0.16, 1, 0, (p) => {
+      const fade = 1 - p;
+      core.material.opacity = fade;
+      glow.material.opacity = fade * 0.5;
+      glow.scale.set(5 + p * 6, len, 5 + p * 6);
+      spark.material.opacity = fade;
+      spark.scale.setScalar(3.5 + p * 5);
+    });
+  }
+
+  // ロッドの範囲魔法。地面に魔法陣が浮かんで、炎が立ちのぼる
   magicBlast(position, radius, color = 0x6bd8ff) {
     const flat = (geometry, c, opacity) => {
       const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
@@ -282,57 +319,110 @@ export class Effects {
     const group = new THREE.Group();
     group.position.set(position.x, position.y + 0.05, position.z);
 
-    const rim = flat(new THREE.RingGeometry(radius * 0.9, radius, 32), color, 0.9);
-    const inner = flat(new THREE.RingGeometry(radius * 0.45, radius * 0.52, 24), color, 0.7);
-    const disc = flat(new THREE.CircleGeometry(radius, 28), color, 0.22);
-    // 魔法陣らしい放射線
+    // 地面に残る焦げ跡と、回る魔法陣
+    const scorch = flat(new THREE.CircleGeometry(radius * 0.85, 24), 0x1a1420, 0.5);
+    const rim = flat(new THREE.RingGeometry(radius * 0.88, radius, 36), color, 0.95);
+    const inner = flat(new THREE.RingGeometry(radius * 0.42, radius * 0.5, 24), 0xffffff, 0.8);
     const spokes = [];
     for (let i = 0; i < 6; i++) {
-      const spoke = flat(new THREE.PlaneGeometry(radius * 1.9, 0.06), color, 0.6);
+      const spoke = flat(new THREE.PlaneGeometry(radius * 1.9, 0.05), color, 0.6);
       spoke.rotation.z = (i / 6) * Math.PI;
       spokes.push(spoke);
       group.add(spoke);
     }
-    // 立ちのぼる光の柱
-    const pillar = new THREE.Mesh(
-      new THREE.CylinderGeometry(radius * 0.7, radius * 0.95, 3.4, 16, 1, true),
+
+    // 立ちのぼる炎。細い円錐をゆらしてチロチロさせる
+    const flames = [];
+    const flameCount = 9;
+    for (let i = 0; i < flameCount; i++) {
+      const tall = 1.5 + Math.random() * 1.6;
+      const flame = new THREE.Mesh(
+        new THREE.ConeGeometry(0.32, tall, 6, 1, true),
+        new THREE.MeshBasicMaterial({
+          color, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide,
+        })
+      );
+      const angle = (i / flameCount) * Math.PI * 2 + Math.random() * 0.4;
+      const out = radius * (0.15 + Math.random() * 0.6);
+      flame.position.set(Math.sin(angle) * out, tall / 2, Math.cos(angle) * out);
+      flames.push({ flame, tall, phase: Math.random() * 6, lean: (Math.random() - 0.5) * 0.3 });
+      group.add(flame);
+    }
+    // 芯の白い炎。いちばん明るいところ
+    const heart = new THREE.Mesh(
+      new THREE.ConeGeometry(radius * 0.26, 2.9, 7, 1, true),
       new THREE.MeshBasicMaterial({
-        color, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide,
+        color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide,
       })
     );
-    pillar.position.y = 1.7;
-    // はじける光の粒
-    const motes = [];
-    for (let i = 0; i < 12; i++) {
-      const mote = new THREE.Mesh(
+    heart.position.y = 1.45;
+    // 一瞬だけはじける光の玉
+    const flash = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(radius * 0.5, 1),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false })
+    );
+    flash.position.y = 0.6;
+    // 舞い上がる火の粉
+    const embers = [];
+    for (let i = 0; i < 16; i++) {
+      const ember = new THREE.Mesh(
         this.flashCoreGeo,
         new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false })
       );
-      const angle = (i / 12) * Math.PI * 2;
-      motes.push({ mote, angle, up: 1.4 + Math.random() * 1.8, out: radius * (0.4 + Math.random() * 0.6) });
-      group.add(mote);
+      const angle = Math.random() * Math.PI * 2;
+      embers.push({
+        ember,
+        angle,
+        out: radius * (0.3 + Math.random() * 0.9),
+        up: 2.0 + Math.random() * 2.6,
+        spin: 1 + Math.random() * 2,
+      });
+      group.add(ember);
     }
 
-    group.add(rim, inner, disc, pillar);
-    this.#add(group, 0.7, 1, 0, (p) => {
+    group.add(scorch, rim, inner, heart, flash);
+    this.#add(group, 0.85, 1, 0, (p) => {
       const fade = 1 - p;
-      rim.scale.setScalar(0.3 + p * 0.75);
-      rim.material.opacity = fade * 0.9;
-      inner.scale.setScalar(0.2 + p * 1.1);
-      inner.material.opacity = fade * 0.7;
-      inner.rotation.z += 0.08;
-      disc.scale.setScalar(Math.min(1, p * 2.2));
-      disc.material.opacity = fade * 0.28;
+      // 魔法陣は一気に広がって、ゆっくり消える
+      const open = Math.min(1, p * 3.5);
+      rim.scale.setScalar(0.25 + open * 0.75);
+      rim.material.opacity = fade * 0.95;
+      inner.scale.setScalar(0.2 + open * 0.9);
+      inner.rotation.z += 0.1;
+      inner.material.opacity = fade * 0.8;
+      scorch.scale.setScalar(open);
+      scorch.material.opacity = fade * 0.5;
       for (const spoke of spokes) {
-        spoke.scale.setScalar(0.2 + p * 0.9);
+        spoke.scale.setScalar(0.2 + open * 0.85);
         spoke.material.opacity = fade * 0.55;
       }
-      pillar.scale.set(0.5 + p * 0.7, 1 + p * 0.4, 0.5 + p * 0.7);
-      pillar.material.opacity = fade * 0.32;
-      for (const m of motes) {
-        const r = p * m.out;
-        m.mote.position.set(Math.sin(m.angle) * r, Math.sin(p * Math.PI) * m.up, Math.cos(m.angle) * r);
-        m.mote.material.opacity = fade;
+
+      // 炎は立ち上がってから、細くなって消える
+      const rise = Math.min(1, p * 2.6);
+      for (const f of flames) {
+        const flicker = 0.75 + Math.sin(p * 26 + f.phase) * 0.25;
+        f.flame.scale.set(fade * 1.1, rise * flicker, fade * 1.1);
+        f.flame.position.y = (f.tall / 2) * rise * flicker;
+        f.flame.rotation.z = Math.sin(p * 9 + f.phase) * f.lean;
+        f.flame.material.opacity = fade * 0.85;
+      }
+      heart.scale.set(fade, rise * (0.9 + Math.sin(p * 20) * 0.1), fade);
+      heart.material.opacity = fade * 0.55;
+
+      // 光の玉は最初だけ
+      const pop = Math.max(0, 1 - p * 5);
+      flash.scale.setScalar(0.4 + (1 - pop) * 1.6);
+      flash.material.opacity = pop;
+
+      for (const e of embers) {
+        const r = p * e.out;
+        e.ember.position.set(
+          Math.sin(e.angle + p * e.spin) * r,
+          p * e.up,
+          Math.cos(e.angle + p * e.spin) * r
+        );
+        e.ember.scale.setScalar(1 + p);
+        e.ember.material.opacity = fade * fade;
       }
     });
   }
