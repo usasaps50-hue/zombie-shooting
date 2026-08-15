@@ -57,6 +57,26 @@ export const ITEMS = {
     jobOnly: 'medic',
     icon: '🩹',
   },
+  // 犯罪者だけが持つナイフ。相手の「いまのHP」の割合で削る。
+  // 血のゲージが溜まっているほど強く、足も速くなる
+  knife: {
+    id: 'knife',
+    name: 'ナイフ',
+    kind: 'melee',
+    // 与えるのは「相手のいまのHP × hpPercent × 血の割合 ＋ damage」
+    damage: 10,
+    hpPercent: 0.25,
+    // 1回当てるごとに溜まる血のゲージ
+    bloodGain: 5,
+    swingTime: 0.22,
+    cooldown: 1.0,
+    range: 2.2,
+    arc: Math.PI / 2.2,
+    // 刃物なので、ほとんど音がしない
+    noise: 3,
+    jobOnly: 'criminal',
+    icon: '🔪',
+  },
   // 攻撃はできないが、近くの仲間（と自分）をまとめて強くする
   megaphone: {
     id: 'megaphone',
@@ -75,6 +95,6 @@ export const ITEMS = {
   },
 };
 
-export const SELECTABLE_ITEMS = ['pistol', 'ak47', 'shovel', 'megaphone', 'hammer'];
+export const SELECTABLE_ITEMS = ['pistol', 'ak47', 'shovel', 'megaphone', 'knife', 'hammer'];
 // 持てる数はクラスのレベルで変わる（progress.js の maxSlots）
 export const BASE_SLOTS = 3;

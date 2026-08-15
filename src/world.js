@@ -170,15 +170,22 @@ export function createWorld() {
     // 2階の床と屋上の高さ（人が立つ面）
     const deck2 = floor1 + 0.6;
     const roofTop = floor2 + 1.2;
-    // 屋上へ上がる階段の吹き抜け。この穴だけ屋上に床を張らない
-    const holeW = 4.0;
-    const holeBack = cz - 0.6;
 
-    // 屋上。吹き抜けを避けて3枚に分けて張る
+    // 屋上へ上がる階段は、2階に着いてすぐの所から始める。
+    // 上り口が2階の床のまん中にないと、ゾンビが辿り着けない
+    const upStart = cz + d / 2 - 2.5;
+    const steps = 7;
+    // 階段が通る範囲（上り口の手前から、上りきった先まで）
+    const holeW = 4.0;
+    const holeFront = upStart + 0.7;
+    const holeBack = upStart - (steps - 1) * 0.9 - 0.7;
+
+    // 屋上。吹き抜けを避けて4枚に分けて張る
     const side = (w / 2 - holeW / 2) / 2;
     addBox(cx - holeW / 2 - side, floor2 + 0.6, cz, side * 2, 0.6, d, 0x8a8177);
     addBox(cx + holeW / 2 + side, floor2 + 0.6, cz, side * 2, 0.6, d, 0x8a8177);
-    addBox(cx, floor2 + 0.6, (cz - d / 2 + holeBack) / 2, holeW, 0.6, holeBack - (cz - d / 2), 0x8a8177);
+    addBox(cx, floor2 + 0.6, (holeBack + cz - d / 2) / 2, holeW, 0.6, holeBack - (cz - d / 2), 0x8a8177);
+    addBox(cx, floor2 + 0.6, (holeFront + cz + d / 2) / 2, holeW, 0.6, cz + d / 2 - holeFront, 0x8a8177);
 
     // 屋上のふち。落ちにくくする低い壁
     for (const s of [-1, 1]) {
@@ -189,7 +196,7 @@ export function createWorld() {
     // 1階へ上がる階段（建物の正面＝南から）
     stairs(cx + 4.5, cz + d / 2 + 5.4, 0, 7, 3.4);
     // 屋上へ上がる階段（建物の中）。1階の階段と同じ向きに、2階の床から上げる
-    stairs(cx, cz + d / 2 - 1.0, 0, 7, 3.4, deck2);
+    stairs(cx, upStart, 0, steps, 3.4, deck2);
   }
 
   // ---- ちょっとした足場。階段は必ず真ん中の広場を向くようにする ----

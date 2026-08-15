@@ -21,8 +21,8 @@ export function classEffects(level) {
 }
 
 // 買うときの値段。0 なら最初から持っている
-export const JOB_PRICE = { soldier: 0, medic: 100, architect: 500 };
-export const ITEM_PRICE = { shovel: 0, pistol: 50, ak47: 300, megaphone: 200, hammer: 0, bandage: 0 };
+export const JOB_PRICE = { soldier: 0, medic: 100, criminal: 400, architect: 500 };
+export const ITEM_PRICE = { shovel: 0, pistol: 50, ak47: 300, megaphone: 200, knife: 0, hammer: 0, bandage: 0 };
 
 // 装甲を着たゾンビは、銃とタレットのダメージをこの割合だけ減らす
 export const ARMOR_GUN_REDUCTION = 0.15;

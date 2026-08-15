@@ -84,6 +84,25 @@ export function createItemMesh(id, gold = false, silencer = false) {
     claw.position.set(0, 0.42, -0.18);
     claw.rotation.x = 0.5;
     g.add(handle, head, claw);
+  } else if (id === 'knife') {
+    // 短い両刃のナイフ。刃を前（-Z）に向けて構える
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.012, 0.34), mat(0xc9d2da, 0.25));
+    blade.position.set(0, 0.02, -0.24);
+    // 切っ先。四角錐を寝かせて、先を細くする
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.12, 4), mat(0xd8e0e7, 0.25));
+    tip.rotation.set(-Math.PI / 2, 0, Math.PI / 4);
+    tip.position.set(0, 0.02, -0.46);
+    // 血が乾いた刃元
+    const stain = new THREE.Mesh(new THREE.BoxGeometry(0.037, 0.014, 0.09), mat(0x7d2b2b, 0.6));
+    stain.position.set(0, 0.02, -0.12);
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.035), mat(0x8d949d, 0.4));
+    guard.position.set(0, 0.02, -0.05);
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.03, 0.16, 8), mat(0x33383f, 0.85));
+    grip.rotation.x = Math.PI / 2;
+    grip.position.set(0, 0.02, 0.05);
+    const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 6), mat(0x8d949d, 0.4));
+    pommel.position.set(0, 0.02, 0.14);
+    g.add(blade, tip, stain, guard, grip, pommel);
   } else if (id === 'megaphone') {
     // ラッパ型の拡声器。太い側が前（-Z）を向く
     const horn = new THREE.Mesh(

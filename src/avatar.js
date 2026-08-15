@@ -79,6 +79,19 @@ function createHat(jobId) {
     const bar2 = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.07, 0.012), mat(0xd93b3b, 0.6));
     bar2.position.copy(bar.position);
     g.add(cap, fold, bar, bar2);
+  } else if (jobId === 'criminal') {
+    // 目出し帽。目のところだけ開いた黒いかぶりもの
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.3), mat(0x22252b, 0.9));
+    hood.position.y = 0.11;
+    const brim = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.06, 0.31), mat(0x181a1f, 0.9));
+    brim.position.y = 0.005;
+    // 目のところの穴
+    const slit = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.05, 0.012), mat(0xc7a68a, 0.9));
+    slit.position.set(0, 0.06, 0.152);
+    // 赤いスカーフ
+    const scarf = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.06, 0.3), mat(0x8a2b2b, 0.85));
+    scarf.position.y = -0.13;
+    g.add(hood, brim, slit, scarf);
   } else if (jobId === 'architect') {
     const shell = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(0xf2c02e));
     shell.position.y = 0.14;
@@ -230,6 +243,8 @@ export class Avatar {
     const holding = this.itemId === 'shovel' || this.itemId === 'hammer'
       ? 'shovel'
       : this.itemId ? 'gun' : null;
+    // ナイフは短いので、腕をもう少し下げて持たせる
+    const knife = this.itemId === 'knife';
     // 拡声器は口元に構えるので、腕をもっと上げる
     const megaphone = this.itemId === 'megaphone';
     let armR = holding ? HOLD_ARM_X[holding] : -step;
@@ -293,6 +308,7 @@ export class Avatar {
 
     // 拡声器を持っているだけのときも、少し高く構えさせる
     if (megaphone && name !== 'shout') armR -= 0.35;
+    if (knife && name !== 'swing') armR += 0.35;
 
     if (name !== 'swing' && name !== 'wave' && name !== 'spin' && name !== 'shout') {
       this.body.rotation.y = THREE.MathUtils.lerp(this.body.rotation.y, 0, dt * 10);

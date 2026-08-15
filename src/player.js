@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PLAYER } from './data/jobs.js';
+import { BLOOD } from './data/upgrades.js';
 
 export const EYE_HEIGHT = 1.7;
 const PLAYER_RADIUS = 0.4;
@@ -11,6 +12,10 @@ const MAX_PITCH = Math.PI / 2 - 0.05;
 
 // これ以下の段差は、ぶつからずに上れる。階段の1段ぶんより少し高くしてある
 export const STEP_HEIGHT = 0.6;
+// 当たり判定の下端を、さらにこれだけ上げる。
+// 床のふちと段の上面がちょうど同じ高さのとき、
+// 「触れている＝ぶつかっている」と判定されて上れなくなるのを防ぐ
+export const STEP_SLACK = 0.05;
 
 const tmpBox = new THREE.Box3();
 const tmpMin = new THREE.Vector3();
@@ -19,7 +24,7 @@ const tmpMax = new THREE.Vector3();
 // 当たり判定の下端を段差ぶん持ち上げる。低い段は素通りするので、階段を歩いて上れる
 export function collides(colliders, x, y, z) {
   const feet = y - EYE_HEIGHT;
-  tmpMin.set(x - PLAYER_RADIUS, feet + STEP_HEIGHT, z - PLAYER_RADIUS);
+  tmpMin.set(x - PLAYER_RADIUS, feet + STEP_HEIGHT + STEP_SLACK, z - PLAYER_RADIUS);
   tmpMax.set(x + PLAYER_RADIUS, y, z + PLAYER_RADIUS);
   tmpBox.set(tmpMin, tmpMax);
   return colliders.some((c) => c.intersectsBox(tmpBox));
@@ -58,6 +63,27 @@ export class Player {
     this.damageReduction = 0;
     // 拡声器でかかる、時間つきの強化
     this.buff = { until: 0, speedUp: 0, powerUp: 0, guard: 0 };
+    // ナイフ（犯罪者）の血のゲージ。溜めるほど強くなり、足も速くなる
+    this.blood = 0;
+    this.releasing = false;
+    this.drainAcc = 0;
+  }
+
+  // 血のゲージの溜まり具合（0〜1）
+  get bloodRatio() {
+    return this.blood / BLOOD.max;
+  }
+
+  addBlood(amount) {
+    this.blood = Math.min(BLOOD.max, this.blood + amount);
+  }
+
+  // 「血の解放」を始める。ゲージが空になるまで続く
+  startRelease() {
+    if (this.blood <= 0) return false;
+    this.releasing = true;
+    this.drainAcc = 0;
+    return true;
   }
 
   get invulnerable() {
@@ -97,6 +123,18 @@ export class Player {
 
   update(dt, input, colliders) {
     this.time += dt;
+    // 「血の解放」中は、決まった間隔でゲージが減っていく
+    if (this.releasing) {
+      this.drainAcc += dt;
+      while (this.drainAcc >= BLOOD.drainEvery && this.blood > 0) {
+        this.drainAcc -= BLOOD.drainEvery;
+        this.blood--;
+      }
+      if (this.blood <= 0) {
+        this.blood = 0;
+        this.releasing = false;
+      }
+    }
     const look = input.consumeLook();
     this.look(look.dx, look.dy);
 
@@ -120,8 +158,10 @@ export class Player {
     }
 
     const base = input.run ? RUN_SPEED : WALK_SPEED;
-    // 武器・クラスのボーナスに、拡声器の強化を足す
-    const boost = this.speedBonus + (this.buffed ? this.buff.speedUp : 0);
+    // 武器・クラスのボーナスに、拡声器の強化と血のゲージぶんを足す
+    const boost = this.speedBonus
+      + (this.buffed ? this.buff.speedUp : 0)
+      + this.bloodRatio * BLOOD.speedAtMax;
     const speed = base * this.job.speedScale * (1 + boost);
     this.speed = Math.min(len, 1) * speed;
 

@@ -21,6 +21,17 @@ export const JOBS = {
     canRevive: true,
     color: 0x9f5f5f,
   },
+  criminal: {
+    id: 'criminal',
+    name: '犯罪者',
+    desc: 'ナイフで相手の残りHPを削り、当てるほど血のゲージが溜まって足が速くなる。HPはやや低い。',
+    hp: 90,
+    speedScale: 1.0,
+    bandages: 0,
+    bandagesPerWave: 0,
+    canRevive: false,
+    color: 0x4a3f52,
+  },
   architect: {
     id: 'architect',
     name: '建築士',

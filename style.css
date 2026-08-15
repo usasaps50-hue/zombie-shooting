@@ -287,6 +287,13 @@ body.hub .hold-bar { display: none; }
 }
 #buff-text.on { color: #ffd76a; font-weight: 700; }
 
+/* 血のゲージ（犯罪者のナイフ）。溜まるほど強く、足も速くなる */
+.blood-bar { height: 6px; background: rgba(0, 0, 0, .5); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+.blood-bar.full { box-shadow: 0 0 8px rgba(200, 40, 40, .9); }
+#blood-fill { height: 100%; width: 0; background: linear-gradient(90deg, #6b1f1f, #d63a3a); transition: width .12s; }
+#blood-text { color: #e08a8a; }
+#blood-text.releasing { color: #ff6b6b; font-weight: 700; }
+
 /* つながっている人の一覧。ウェーブ表示のすぐ下に出す */
 #net {
   position: absolute; top: calc(56px + var(--safe-t)); right: calc(16px + var(--safe-r));

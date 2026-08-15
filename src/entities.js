@@ -4,7 +4,7 @@ import { Zombie } from './zombie.js';
 import { Mutant } from './mutant.js';
 import { Skeleton } from './skeleton.js';
 import { ENEMIES, JOBS, BUILD_LURE } from './data/jobs.js';
-import { floorHeight, STEP_HEIGHT, EYE_HEIGHT } from './player.js';
+import { floorHeight, STEP_HEIGHT, STEP_SLACK, EYE_HEIGHT } from './player.js';
 import { makeLabel, hpColor } from './label.js';
 
 export class Teammate {
@@ -55,6 +55,11 @@ const WANDER_RANGE = 14;
 const TURN_SPEED = 7;
 // これより遠いゾンビは、3フレームに1回だけ考える（そのぶん歩幅を3倍にする）
 const FAR_THINK = 34;
+
+// 相手を見つけていないゾンビが集まる場所（広場の真ん中）と、
+// そこまで来たら止まる距離
+const CENTER = new THREE.Vector3(0, 0, 0);
+const CENTER_RADIUS = 10;
 
 const box = new THREE.Box3();
 const ray = new THREE.Ray();
@@ -244,6 +249,7 @@ export class Enemy {
     this.target = null;
     this.willRevive = false;
     this.shooting = false;
+    this.climbing = null;
     this.#setAiming(false);
     this.velocity.set(0, 0, 0);
   }
@@ -286,11 +292,12 @@ export class Enemy {
     return true;
   }
 
-  // 銃声を聞いた。しばらくその場所へ向かう
-  alert(spot, now) {
+  // 銃声を聞いた。しばらくその場所へ向かう。
+  // 拡声器のように遠くから呼ぶときは、長めの時間を渡す
+  alert(spot, now, seconds = 8) {
     if (!this.active || !this.alive) return;
     this.alertSpot.copy(spot);
-    this.alertUntil = now + 8;
+    this.alertUntil = Math.max(this.alertUntil, now + seconds);
   }
 
   knockback(direction, power) {
@@ -301,7 +308,7 @@ export class Enemy {
   // 足元の当たり判定を x,z に置いたときに何とぶつかるか。
   // 下端を段差ぶん上げてあるので、階段のような低い段は素通りして上れる
   #blocker(x, z, colliders, structures, feet = this.root.position.y) {
-    box.min.set(x - RADIUS, feet + STEP_HEIGHT, z - RADIUS);
+    box.min.set(x - RADIUS, feet + STEP_HEIGHT + STEP_SLACK, z - RADIUS);
     box.max.set(x + RADIUS, feet + this.def.height * 0.8, z + RADIUS);
     if (colliders.some((c) => c.intersectsBox(box))) return 'nature';
     return structures.find((s) => s.alive && s.box.intersectsBox(box)) ?? null;
@@ -601,17 +608,29 @@ export class Enemy {
   // 相手が自分より高いところにいるとき、上れる階段の下を探す
   #stairTo(playerFeet, stairPoints) {
     const pos = this.root.position;
+    // いま上っている途中の階段があれば、上りきるまで乗り換えない。
+    // 途中で別の階段に向かうと、いまの階段の横へ落ちてしまう
+    if (this.climbing) {
+      if (pos.y < this.climbing.top.y - 0.25) return this.climbing;
+      this.climbing = null;
+    }
     let best = null;
     let bestDist = Infinity;
     for (const stair of stairPoints) {
+      // 上り口と同じ高さにいるか、いま上っている最中の階段だけ使える。
+      // 2階から始まる階段は1階からは使えず、
+      // 途中まで上った階段は見失わない
+      if (pos.y < stair.bottom.y - 1.2 || pos.y > stair.top.y + 1.2) continue;
       // 自分より低い階段や、行き過ぎる階段は使わない
-      if (stair.top < pos.y + 0.6 || stair.top > playerFeet + 1.6) continue;
-      const dist = pos.distanceTo(stair.bottom);
+      if (stair.top.y < pos.y + 0.6 || stair.top.y > playerFeet + 1.6) continue;
+      // 上り口までの距離は、平面で見る（高さの差はもう確かめてある）
+      const dist = Math.hypot(stair.bottom.x - pos.x, stair.bottom.z - pos.z);
       if (dist < bestDist) {
         bestDist = dist;
         best = stair;
       }
     }
+    this.climbing = best;
     return best;
   }
 
@@ -767,10 +786,17 @@ export class Enemy {
     const hears = now < this.alertUntil;
 
     if (!sees && !hears) {
-      this.state = 'wander';
       this.attacking = false;
       this.shooting = false;
       this.#setAiming(false);
+      // 近くに壊せるものがあればそちらへ、なければ広場の真ん中へ集まる
+      const build = nearestStructure(structures, pos);
+      if (build) {
+        this.#goBreak(build, dt, now, colliders, structures, onBreak, onSwing);
+        return;
+      }
+      if (this.#headToCenter(dt, colliders, structures, onBreak, now, onSwing)) return;
+      this.state = 'wander';
       this.#wander(dt, now, colliders, structures);
       return;
     }
@@ -787,20 +813,10 @@ export class Enemy {
     // タレットに背を向けて走り抜けると、ずっと撃たれ続けてしまうため
     const build = nearestStructure(structures, pos);
     if (build) {
-      const toBuild = build.root.position.clone().sub(pos).setY(0);
-      const buildDist = toBuild.length();
+      const buildDist = build.root.position.distanceTo(pos);
       const playerDist = sees ? pos.distanceTo(player.position) : Infinity;
       if (buildDist < playerDist) {
-        this.state = 'break';
-        this.#face(Math.atan2(-toBuild.x, -toBuild.z), dt);
-        if (buildDist <= this.def.reach + 1.0) {
-          this.#attack(now, () => onBreak(this, build, this.def.structureDamage), onSwing);
-        } else {
-          this.attacking = false;
-          this.zombie.setMode('walk');
-          const dir = toBuild.divideScalar(buildDist || 1);
-          this.#approach(dt, dir, colliders, structures, onBreak, now, onSwing);
-        }
+        this.#goBreak(build, dt, now, colliders, structures, onBreak, onSwing);
         return;
       }
     }
@@ -813,10 +829,16 @@ export class Enemy {
     // 高いところにいる相手には、まず階段の下、次に上を目指す
     if (sees) {
       const playerFeet = player.position.y - EYE_HEIGHT;
+      // 同じ高さまで来たら、上っていた階段のことは忘れる
+      if (playerFeet - pos.y <= 1.2) this.climbing = null;
       if (playerFeet - pos.y > 1.2) {
         const stair = this.#stairTo(playerFeet, stairPoints);
         if (stair) {
-          goal = pos.distanceTo(stair.bottom) > 2.0 ? stair.bottom : stair.top;
+          // すでに上りはじめていたら、迷わず上を目指す。
+          // 3Dの距離で切り替えると、上り口と出口を行き来して固まってしまう
+          const climbing = pos.y > stair.bottom.y + 0.3;
+          const toBottom = Math.hypot(stair.bottom.x - pos.x, stair.bottom.z - pos.z);
+          goal = !climbing && toBottom > 2.0 ? stair.bottom : stair.top;
           canAttack = false;
           this.state = 'climb';
         }
@@ -841,6 +863,41 @@ export class Enemy {
     if (this.state !== 'climb') this.state = sees ? 'chase' : 'alert';
     this.attacking = false;
     this.zombie.setMode('walk');
+  }
+
+  // 建物のところまで行って壊す
+  #goBreak(build, dt, now, colliders, structures, onBreak, onSwing) {
+    const pos = this.root.position;
+    const to = build.root.position.clone().sub(pos).setY(0);
+    const dist = to.length();
+    this.state = 'break';
+    this.#face(Math.atan2(-to.x, -to.z), dt);
+    if (dist <= this.def.reach + 1.0) {
+      this.#attack(now, () => onBreak(this, build, this.def.structureDamage), onSwing);
+      return;
+    }
+    this.attacking = false;
+    this.zombie.setMode('walk');
+    const dir = to.divideScalar(dist || 1);
+    this.#approach(dt, dir, colliders, structures, onBreak, now, onSwing);
+  }
+
+  // 相手が見つかっていないときは、広場（真ん中）を目指して歩く。
+  // 建物が近くにあるときは、そちらを壊しに行くほうが先
+  #headToCenter(dt, colliders, structures, onBreak, now, onSwing) {
+    const pos = this.root.position;
+    const to = CENTER.clone().sub(pos).setY(0);
+    const dist = to.length();
+    // 真ん中まで来たら、そのあたりをうろつく
+    if (dist < CENTER_RADIUS) return false;
+    this.state = 'march';
+    this.#face(Math.atan2(-to.x, -to.z), dt);
+    this.attacking = false;
+    const dir = to.divideScalar(dist || 1);
+    if (!this.#approach(dt, dir, colliders, structures, onBreak, now, onSwing)) {
+      this.zombie.setMode('walk');
+    }
+    return true;
   }
 
   #wander(dt, now, colliders, structures) {
@@ -873,6 +930,7 @@ export class Enemy {
     this.attacking = false;
     this.slamUsed = false;
     this.burrowUsed = false;
+    this.climbing = null;
     this.revived = false;
     this.willRevive = false;
     this.locked = false;

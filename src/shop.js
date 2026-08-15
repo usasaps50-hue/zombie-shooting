@@ -19,7 +19,7 @@ function escapeHtml(text) {
   ));
 }
 
-const JOB_MARK = { soldier: '★', medic: '✚', architect: '⚒' };
+const JOB_MARK = { soldier: '★', medic: '✚', criminal: '🔪', architect: '⚒' };
 
 // 待機場の角にある端末の合言葉と、1回に出せるコインの上限
 const SECRET_PASS = 'Usasaburosuta';
@@ -123,6 +123,8 @@ export class Shop {
             ? `Lv${levelOf(id)}　火力 ${item.damage} ／ 装弾数 ${item.magazine}発`
             : item.kind === 'build'
               ? '壁とタレットを建てる'
+              : item.id === 'knife'
+                ? `Lv${levelOf(id)}　相手のHPの${Math.round((upgradedItem(id, levelOf(id)).hpPercent ?? 0) * 100)}%＋${upgradedItem(id, levelOf(id)).damage} ／ ${upgradedItem(id, levelOf(id)).cooldown}秒に1回`
               : item.kind === 'buff'
                 ? `Lv${levelOf(id)}　${buffText(buffOf(upgradedItem(id, levelOf(id)))) || '効果なし'}を${item.buffTime}秒 ／ ${item.cooldown}秒に1回`
                 : `Lv${levelOf(id)}　火力 ${item.damage} ／ ${item.cooldown}秒に1回`;
@@ -221,7 +223,9 @@ export class Shop {
       const item = upgradedItem(id, level);
       const power = item.kind === 'buff'
         ? buffText(buffOf(item))
-        : `火力+${Math.round(DAMAGE_PER_LEVEL * (level - 1) * 100)}%`;
+        : item.id === 'knife'
+          ? `相手のHPの${Math.round((item.hpPercent ?? 0) * 100)}%＋${item.damage}`
+          : `火力+${Math.round(DAMAGE_PER_LEVEL * (level - 1) * 100)}%`;
       const next = status.max ? 'これ以上は上がらない（最大）' : UPGRADES[id].levels[level].desc;
       const stat = `Lv${level} / ${MAX_LEVEL}　${power}<br><span class="shop-next">次：${next}</span>`;
       const action = status.max ? 'MAX' : status.locked ? '🔒' : `🪙${status.cost}`;

@@ -9,7 +9,9 @@ import { Lobby } from './lobby.js';
 import { createHub, TALK_RANGE } from './hub.js';
 import { Shop, syncJobItems, randomPass } from './shop.js';
 import { makeItemIcons } from './itemicon.js';
-import { upgradedItem, MAX_LEVEL, ROLLING_SMASH, HEADSHOT, buffOf, buffText } from './data/upgrades.js';
+import {
+  upgradedItem, MAX_LEVEL, ROLLING_SMASH, HEADSHOT, buffOf, buffText, BLOOD, knifeDamage,
+} from './data/upgrades.js';
 import { Waves } from './waves.js';
 import { WAVE } from './data/waves.js';
 import { progress, levelOf, addCoins, classBonus, maxSlots, playerName } from './progress.js';
@@ -122,8 +124,8 @@ const FOV_AIM = 42;
 
 // HUDと店で使う武器アイコン。実際の3Dモデルを描いた画像（金色版も作っておく）
 const ITEM_ICONS = makeItemIcons([
-  'pistol', 'ak47', 'shovel', 'hammer', 'bandage', 'megaphone',
-  'pistol:gold', 'ak47:gold', 'shovel:gold', 'megaphone:gold',
+  'pistol', 'ak47', 'shovel', 'hammer', 'bandage', 'megaphone', 'knife',
+  'pistol:gold', 'ak47:gold', 'shovel:gold', 'megaphone:gold', 'knife:gold',
 ]);
 hud.setIcons(ITEM_ICONS);
 
@@ -172,12 +174,28 @@ function enterHub(next) {
   input.requestLock();
 }
 
+// 持っていく武器から、使えるスキルを決める
+function makeSkill(loadout) {
+  for (const id of loadout.items) {
+    const kind = upgradedItem(id, levelOf(id)).effects.skill;
+    if (kind === 'bloodRelease') {
+      return { kind, name: '血の解放', itemName: 'ナイフ', charge: 0, need: 0, ready: true };
+    }
+    if (kind === 'rollingSmash') {
+      return {
+        kind, name: 'ローリングスマッシュ', itemName: 'シャベル',
+        charge: 0, need: ROLLING_SMASH.need, ready: false,
+      };
+    }
+  }
+  return null;
+}
+
 function startGame(loadout) {
   const job = JOBS[loadout.jobId];
   const player = new Player(job);
   // レベルを反映したアイテムを持っていく
   const weapons = new Weapons(loadout.items.map((id) => upgradedItem(id, levelOf(id))), onWeaponEvent);
-  const hasSkill = loadout.items.some((id) => upgradedItem(id, levelOf(id)).effects.skill);
 
   const bonus = classBonus(job.id);
   player.damageReduction = bonus.damageReduction ?? 0;
@@ -186,7 +204,7 @@ function startGame(loadout) {
     player, weapons, loadout, job, hold: 0, holdAction: null,
     bonus,
     ult: new UltimateCharge(job.id, bonus.ultStock ?? 1),
-    skill: hasSkill ? { name: 'ローリングスマッシュ', charge: 0, need: ROLLING_SMASH.need, ready: false } : null,
+    skill: makeSkill(loadout),
     spin: 0,
     coins: 0,
   };
@@ -344,8 +362,10 @@ function useMegaphone(item) {
   player.applyBuff(buff, item.buffTime);
   effects.shout(new THREE.Vector3(player.position.x, player.position.y - EYE_HEIGHT, player.position.z), range);
   sfx.play('megaphone');
-  // 大声なので、まわりのゾンビが寄ってくる
-  makeNoise(player.position.clone(), item.noise ?? 0, now);
+  // 大声なので、マップにいるゾンビ全部が声のした場所へ集まってくる
+  const spot = player.position.clone();
+  makeNoise(spot, Infinity, now, 25);
+  net.send('fx', { k: 'call', p: [r2(spot.x), r2(spot.y), r2(spot.z)] });
 
   // 声の届く仲間にも同じ効果を配る
   let reached = 0;
@@ -606,6 +626,12 @@ function setupNet() {
   // その他の見た目（地割れ・土けむり・着地の印）
   net.on('fx', (msg) => {
     const at = new THREE.Vector3(...msg.p);
+    if (msg.k === 'call') {
+      // 仲間が拡声器を使った。ゾンビを動かしている親が全部呼び寄せる
+      if (net.isHost) makeNoise(at, Infinity, performance.now() / 1000, 25);
+      sfx.playAt('megaphone', at, { volume: 0.8 });
+      return;
+    }
     if (msg.k === 'crack') {
       effects.groundCrack(at, msg.r);
       sfx.playAt('slam', at);
@@ -694,12 +720,13 @@ function enemyShoot(enemy, kind, damage, target, now) {
   });
 }
 
-// 銃声。届いた範囲のゾンビが音のした場所へ寄ってくる
-function makeNoise(position, radius, now) {
+// 銃声。届いた範囲のゾンビが音のした場所へ寄ってくる。
+// radius に Infinity を渡すと、マップ中のゾンビ全部に届く
+function makeNoise(position, radius, now, seconds = 8) {
   if (!radius) return;
   for (const enemy of enemies) {
     if (enemy.active && enemy.alive && enemy.position.distanceTo(position) <= radius) {
-      enemy.alert(position, now);
+      enemy.alert(position, now, seconds);
     }
   }
 }
@@ -887,7 +914,10 @@ function swing(item) {
   // シャベルはほとんど音がしないので、すぐ近くにしか気づかれない
   makeNoise(origin.clone(), item.noise ?? 0, performance.now() / 1000);
 
+  const { player } = game;
+  const isKnife = item.id === 'knife';
   let hits = 0;
+  let shown = 0;
   for (const enemy of enemies) {
     if (!enemy.alive) continue;
     const to = enemy.position.clone().sub(origin);
@@ -895,20 +925,35 @@ function swing(item) {
     const dist = to.length();
     if (dist > item.range) continue;
     if (to.normalize().dot(flat) < Math.cos(item.arc / 2)) continue;
-    damageEnemy(enemy, item.damage, performance.now() / 1000, item);
-    enemy.knockback(to, SHOVEL_KNOCKBACK);
+    // ナイフは相手のいまのHPを削る。血のゲージが満タンのときが本来の威力
+    const damage = isKnife
+      ? knifeDamage(item, enemy.hp, player.bloodRatio)
+      : item.damage;
+    shown = Math.max(shown, damage);
+    damageEnemy(enemy, damage, performance.now() / 1000, item);
+    enemy.knockback(to, isKnife ? SHOVEL_KNOCKBACK * 0.4 : SHOVEL_KNOCKBACK);
     hits++;
   }
   if (!hits) return;
   sfx.play('hit');
-  hud.setToast(`ヒット -${item.damage}`, 0.8);
+
+  if (isKnife) {
+    player.addBlood(item.bloodGain ?? 0);
+    // 「血の解放」の最中に当てると、そのぶんHPが戻る
+    if (player.releasing) {
+      player.heal(BLOOD.healPerHit);
+      game.ult.add('heal', BLOOD.healPerHit);
+      sfx.play('heal');
+    }
+  }
+  hud.setToast(`ヒット -${shown}`, 0.8);
   chargeSkill(item);
 }
 
 // 攻撃を当てた回数でスキルが貯まる。1回の振りで何体当てても1回ぶん
 function chargeSkill(item) {
   const { skill } = game;
-  if (!skill || !item.effects?.skill || skill.ready) return;
+  if (!skill || skill.kind !== 'rollingSmash' || !item.effects?.skill || skill.ready) return;
   skill.charge = Math.min(skill.need, skill.charge + 1);
   skill.ready = skill.charge >= skill.need;
   if (skill.ready) hud.setToast(`${skill.name}が使える！`, 1.6);
@@ -920,9 +965,26 @@ function useSkill() {
   if (!skill || player.downed) return;
   const item = weapons.current;
   if (!item?.effects?.skill) {
-    hud.setToast('シャベルを持っているときに使えます', 1.4);
+    hud.setToast(`${skill.name}は ${skill.itemName}を持っているときに使えます`, 1.6);
     return;
   }
+
+  // ナイフの「血の解放」。溜めた血を使って、当てるたびに回復する
+  if (item.effects.skill === 'bloodRelease') {
+    if (player.releasing) {
+      hud.setToast('もう解放中', 1.2);
+      return;
+    }
+    if (!player.startRelease()) {
+      hud.setToast('血のゲージが空っぽ', 1.4);
+      return;
+    }
+    sfx.play('buffed');
+    effects.shout(new THREE.Vector3(player.position.x, player.position.y - EYE_HEIGHT, player.position.z), 3.2);
+    hud.setToast(`${skill.name}！ 当てるたびにHP+${BLOOD.healPerHit}（あと${(player.blood * BLOOD.drainEvery).toFixed(1)}秒）`, 2.6);
+    return;
+  }
+
   if (!skill.ready) {
     hud.setToast(`${skill.name}は 攻撃${skill.need - skill.charge}回ぶん たりない`, 1.4);
     return;
@@ -1357,6 +1419,9 @@ function frame() {
       waves: waveInfo(),
       buff: player.buffed ? { text: buffText(player.buff), left: player.buffLeft } : null,
       cooldown: weapons.current?.kind === 'buff' ? weapons.cooldownLeft() : 0,
+      blood: game.skill?.kind === 'bloodRelease'
+        ? { value: player.blood, max: BLOOD.max, speedAtMax: BLOOD.speedAtMax, releasing: player.releasing }
+        : null,
     });
   } else if (game) {
     hud.update(dt, {
@@ -1371,6 +1436,7 @@ function frame() {
       waves: waveInfo(),
       buff: null,
       cooldown: 0,
+      blood: null,
     });
   } else {
     camera.position.set(0, EYE_HEIGHT, 8);

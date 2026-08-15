@@ -40,6 +40,9 @@ export class Hud {
     this.skillBtn = document.getElementById('btn-skill');
     this.coinText = document.getElementById('coin-text');
     this.buffText = document.getElementById('buff-text');
+    this.bloodBar = document.getElementById('blood-bar');
+    this.bloodFill = document.getElementById('blood-fill');
+    this.bloodText = document.getElementById('blood-text');
     this.aimBtn = document.getElementById('btn-aim');
     this.waveNum = document.getElementById('wave-num');
     this.waveLeft = document.getElementById('wave-left');
@@ -170,6 +173,7 @@ export class Hud {
     this.reloadBtn.textContent = cycles ? '切替' : 'R';
 
     this.#updateBuff(state.buff, state.cooldown);
+    this.#updateBlood(state.blood);
     this.#updateWave(state.waves);
     this.#updateUlt(state.ult);
     this.#updateSkill(state.skill);
@@ -202,6 +206,23 @@ export class Hud {
       this.buffText.textContent = `📢 つぎまで ${cooldown.toFixed(1)}秒`;
       this.buffText.classList.remove('on');
     }
+  }
+
+  // 血のゲージ。ナイフを持っているときだけ出す
+  #updateBlood(blood) {
+    const show = !!blood;
+    this.bloodBar.classList.toggle('hidden', !show);
+    this.bloodText.classList.toggle('hidden', !show);
+    if (!show) return;
+
+    const ratio = blood.value / blood.max;
+    this.bloodFill.style.width = `${ratio * 100}%`;
+    this.bloodBar.classList.toggle('full', blood.value >= blood.max);
+    this.bloodText.classList.toggle('releasing', blood.releasing);
+    const speed = `移動+${Math.round(ratio * blood.speedAtMax * 100)}%`;
+    this.bloodText.textContent = blood.releasing
+      ? `血の解放中　${Math.round(blood.value)} / ${blood.max}　${speed}`
+      : `血 ${Math.round(blood.value)} / ${blood.max}　${speed}`;
   }
 
   #updateUlt(ult) {

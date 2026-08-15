@@ -51,6 +51,16 @@ export const UPGRADES = {
       },
     ],
   },
+  knife: {
+    id: 'knife',
+    levels: [
+      { desc: '相手のいまのHPの25%＋10ダメージ／1秒に1回／血+5' },
+      { cost: 200, speedBonus: 0.2, cooldown: 0.8, bloodGain: 6, desc: '移動速度+20%／0.8秒に1回／血+6' },
+      { cost: 400, skill: 'bloodRelease', desc: 'スキル「血の解放」が使える' },
+      { cost: 700, hpPercent: 0.39, damage: 30, desc: '相手のいまのHPの39%＋30ダメージ' },
+      { cost: 1000, gold: true, cooldown: 0.6, desc: '見た目が金色／0.6秒に1回' },
+    ],
+  },
   megaphone: {
     id: 'megaphone',
     levels: [
@@ -94,6 +104,22 @@ export function buffText(buff) {
 // 攻撃を当てた回数がこれだけ貯まるとスキルが撃てる
 export const ROLLING_SMASH = { need: 5, range: 4.2, damageScale: 1.0, spinTime: 0.7 };
 
+// 血のゲージ（ナイフ）。溜めるほど強くなり、足も速くなる
+export const BLOOD = {
+  max: 100,
+  // ゲージが満タンのときの移動速度のボーナス
+  speedAtMax: 0.5,
+  // 「血の解放」中：この秒数ごとに1ずつ減り、当てるたびにHPが回復する
+  drainEvery: 0.1,
+  healPerHit: 5,
+};
+
+// ナイフの威力。血のゲージが満タンのときが、書いてある数字そのもの
+export function knifeDamage(item, targetHp, bloodRatio) {
+  const pct = item.hpPercent ?? 0;
+  return Math.max(1, Math.ceil(targetHp * pct * bloodRatio + item.damage));
+}
+
 // 頭に当てたときの倍率
 export const HEADSHOT = { multiplier: 1.1, from: 0.78 };
 
@@ -129,6 +155,10 @@ export function upgradedItem(itemId, level) {
   if (bonus.fireInterval) item.fireInterval = bonus.fireInterval;
   if (bonus.reloadTime) item.reloadTime = bonus.reloadTime;
   if (bonus.rangeBonus && base.range) item.range = base.range * (1 + bonus.rangeBonus);
+  // ナイフ用。振る間隔・相手のHPを削る割合・溜まる血の量
+  if (bonus.cooldown) item.cooldown = bonus.cooldown;
+  if (bonus.hpPercent) item.hpPercent = bonus.hpPercent;
+  if (bonus.bloodGain) item.bloodGain = bonus.bloodGain;
   // サイレンサーを付けると、音が届く距離が短くなる
   if (bonus.silencer) item.noise = bonus.silencer;
   return item;
