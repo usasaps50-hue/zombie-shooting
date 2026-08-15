@@ -5,13 +5,14 @@ import { makeLabel, hpColor } from './label.js';
 // value は「たまっている回数」。1.0 で1回ぶん、stock まで貯めておける
 export class UltimateCharge {
   constructor(jobId, stock = 1) {
-    this.def = ULTIMATES[jobId];
+    // 必殺技が用意されていない職業でも、バトルが始まらなくならないようにする
+    this.def = ULTIMATES[jobId] ?? null;
     this.stock = stock;
-    this.value = this.def.startCharge;
+    this.value = this.def?.startCharge ?? 0;
   }
 
   get ready() {
-    return this.value >= 1;
+    return !!this.def && this.value >= 1;
   }
 
   // 表示用。いま満タンの何割まで来ているか（1回ぶんの中での進み具合）
@@ -25,7 +26,7 @@ export class UltimateCharge {
 
   // kind が自分の貯め方と一致したときだけ増える
   add(kind, amount) {
-    if (kind !== this.def.charge || this.value >= this.stock || !(amount > 0)) return;
+    if (!this.def || kind !== this.def.charge || this.value >= this.stock || !(amount > 0)) return;
     this.value = Math.min(this.stock, this.value + amount / this.def.need);
   }
 

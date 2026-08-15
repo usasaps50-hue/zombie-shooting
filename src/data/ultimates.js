@@ -16,6 +16,14 @@ export const ULTIMATES = {
     startCharge: 0,
     desc: '小さな病院を建てる。近くにいると毎秒8回復。合計100回復でチャージ完了（蘇生はそのキャラのHP分）。',
   },
+  criminal: {
+    jobId: 'criminal',
+    name: '血の宴',
+    charge: 'damage',
+    need: 200,
+    startCharge: 0,
+    desc: '血のゲージが一気に満タンになり、HPも40回復する。合計200ダメージでチャージ完了。',
+  },
   architect: {
     jobId: 'architect',
     name: 'ゴッドタレット',
@@ -27,6 +35,9 @@ export const ULTIMATES = {
 };
 
 export const BOMB = { damage: 50, radius: 4.5, speed: 17, gravity: 22 };
+
+// 犯罪者の必殺技。血のゲージを満タンにして、そのぶん体力も戻す
+export const BLOOD_FEAST = { heal: 40 };
 
 // ゴッドタレットは運任せ。残りは失敗（チャージは消える）
 export const GOD_TURRET_ODDS = { drones: 0.3, rocket: 0.3 };

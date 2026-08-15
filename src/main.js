@@ -28,7 +28,7 @@ import { EnemyShots } from './enemyshots.js';
 import { ITEMS } from './data/items.js';
 import { JOBS, PLAYER, ENEMIES } from './data/jobs.js';
 import { TURRET, MATERIALS } from './data/builds.js';
-import { ULTIMATES, HOSPITAL, DRONE, GOD_TURRET_ODDS } from './data/ultimates.js';
+import { ULTIMATES, HOSPITAL, DRONE, GOD_TURRET_ODDS, BLOOD_FEAST } from './data/ultimates.js';
 import { ARMOR_GUN_REDUCTION } from './data/classes.js';
 import { IS_TOUCH, QUALITY } from './device.js';
 import { sfx } from './audio.js';
@@ -852,6 +852,18 @@ const ULT_ACTIONS = {
     return true;
   },
 
+  // 血のゲージを一気に満タンにして、体力も戻す
+  criminal: () => {
+    const { player } = game;
+    player.blood = BLOOD.max;
+    const healed = player.heal(BLOOD_FEAST.heal);
+    const feet = new THREE.Vector3(player.position.x, player.position.y - EYE_HEIGHT, player.position.z);
+    effects.shout(feet, 4.0);
+    sfx.play('buffed');
+    hud.setToast(`${ULTIMATES.criminal.name}！ 血が満タン／HP+${Math.round(healed)}`, 2.4);
+    return true;
+  },
+
   medic: () => {
     if (!placeUltStructure('hospital', 4.2)) return false;
     hud.setToast(`${ULTIMATES.medic.name}を建てた！ 近くにいると毎秒${HOSPITAL.healPerSecond}回復`, 2.4);
@@ -880,11 +892,17 @@ const ULT_ACTIONS = {
 function useUltimate() {
   const { player, ult, job } = game;
   if (player.downed) return;
+  if (!ult.def) return;
   if (!ult.ready) {
     hud.setToast(`${ult.def.name}はチャージ中（${Math.floor(ult.value * 100)}%）`, 1.4);
     return;
   }
-  if (ULT_ACTIONS[job.id]()) {
+  const action = ULT_ACTIONS[job.id];
+  if (!action) {
+    hud.setToast('この職業には必殺技がありません', 1.6);
+    return;
+  }
+  if (action()) {
     sfx.play('ultimate');
     ult.consume();
   }

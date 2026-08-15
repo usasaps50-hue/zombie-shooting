@@ -226,8 +226,10 @@ export class Hud {
   }
 
   #updateUlt(ult) {
-    for (const el of [this.ultBar, this.ultText, this.ultBtn]) el.classList.toggle('hidden', !ult);
-    if (!ult) return;
+    // 必殺技が用意されていない職業では、ゲージごと出さない
+    const show = !!ult?.def;
+    for (const el of [this.ultBar, this.ultText, this.ultBtn]) el.classList.toggle('hidden', !show);
+    if (!show) return;
 
     const percent = Math.floor(ult.progress * 100);
     this.ultFill.style.width = `${percent}%`;
