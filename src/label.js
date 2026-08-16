@@ -98,14 +98,21 @@ export function makeBubble() {
     ctx.fill();
     ctx.stroke();
 
-    // 下向きのしっぽ。話している人を指す
+    // 下向きのしっぽ。話している人を指す。
+    // 遠くからだと細いと見えないので、太めに描いてふちも付ける
     ctx.beginPath();
-    ctx.moveTo(BUBBLE_W / 2 - 14, y + height - 1);
-    ctx.lineTo(BUBBLE_W / 2, y + height + 22);
-    ctx.lineTo(BUBBLE_W / 2 + 14, y + height - 1);
+    ctx.moveTo(BUBBLE_W / 2 - 22, y + height - 2);
+    ctx.lineTo(BUBBLE_W / 2, y + height + 24);
+    ctx.lineTo(BUBBLE_W / 2 + 22, y + height - 2);
     ctx.closePath();
     ctx.fillStyle = 'rgba(16, 21, 28, .88)';
     ctx.fill();
+    // ふきだし本体との境目に線が残らないよう、両側だけなぞる
+    ctx.beginPath();
+    ctx.moveTo(BUBBLE_W / 2 - 22, y + height - 2);
+    ctx.lineTo(BUBBLE_W / 2, y + height + 24);
+    ctx.lineTo(BUBBLE_W / 2 + 22, y + height - 2);
+    ctx.stroke();
 
     ctx.fillStyle = '#eaf0f6';
     ctx.textAlign = 'center';

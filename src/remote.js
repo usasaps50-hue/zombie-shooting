@@ -177,6 +177,8 @@ export class RemotePlayer {
   say(text, seconds = 6) {
     this.bubble.draw(text);
     this.bubble.sprite.visible = true;
+    // 前のふきだしが消えかけていたら、透明度を戻してから出す
+    this.bubble.sprite.material.opacity = 1;
     this.bubbleLeft = seconds;
   }
 
