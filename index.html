@@ -27,13 +27,34 @@
     <div class="panel">
       <h1>ゾンビシューティング</h1>
 
-      <div class="row">
-        <label>あなた</label>
-        <ul id="members" class="members"></ul>
-        <p class="hint">まずは待機場に入ります。職業とアイテムはお店で選び、合言葉は奥のバトルゲートで決めます。</p>
+      <!-- ログイン画面。ここを通らないとゲームに入れない -->
+      <div id="login-view">
+        <div class="row">
+          <label for="login-name">なまえ</label>
+          <input id="login-name" type="text" maxlength="12" autocomplete="username"
+                 autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="12文字まで">
+          <label for="login-pass">パスワード</label>
+          <input id="login-pass" type="password" maxlength="32" autocomplete="current-password"
+                 placeholder="4文字以上">
+          <label class="check"><input id="login-remember" type="checkbox" checked>つぎからパスワードを聞かない</label>
+          <p id="login-error" class="error hidden"></p>
+          <p class="hint">アカウントは<b>この端末の中だけ</b>に保存されます。ほかの端末やほかのブラウザからは、同じアカウントで入れません。パスワードは元にもどせない形にしてしまうので、忘れると入れなくなります。</p>
+        </div>
+        <button id="btn-login" class="primary" type="button">ログイン</button>
+        <button id="btn-signup" class="ghost" type="button">はじめての人：アカウントを作る</button>
       </div>
 
-      <button id="btn-start" class="primary" type="button">待機場に入る</button>
+      <!-- ログインしたあと -->
+      <div id="start-view" class="hidden">
+        <div class="row">
+          <label>あなた</label>
+          <ul id="members" class="members"></ul>
+          <p class="hint">まずは待機場に入ります。職業とアイテムはお店で選び、合言葉は奥のバトルゲートで決めます。</p>
+        </div>
+
+        <button id="btn-start" class="primary" type="button">待機場に入る</button>
+        <button id="btn-logout" class="ghost" type="button">ログアウト（べつのアカウントにする）</button>
+      </div>
     </div>
   </section>
 
@@ -93,11 +114,12 @@
     <div id="touch-ui">
       <button id="btn-pause" class="tbtn tiny" type="button">॥</button>
       <div id="stick"><div id="stick-knob"></div></div>
+      <!-- 狙うボタンは左手側（スティックの上）。右手は攻撃に専念できる -->
+      <button id="btn-aim" class="tbtn aim hidden" type="button">狙</button>
       <div id="touch-buttons">
         <button id="btn-ult" class="tbtn ult" type="button">必殺</button>
         <button id="btn-skill" class="tbtn skill hidden" type="button">技</button>
         <button id="btn-reload" class="tbtn" type="button">R</button>
-        <button id="btn-aim" class="tbtn aim hidden" type="button">狙</button>
         <button id="btn-use" class="tbtn" type="button">使</button>
         <button id="btn-fire" class="tbtn big" type="button">攻撃</button>
       </div>
@@ -129,7 +151,7 @@
     <div class="panel small">
       <h2>ポーズ</h2>
       <p class="hint">W A S D 移動 ／ マウス 視点 ／ 左クリック 攻撃 ／ R リロード・切替 ／ Q 必殺技 ／ F スキル ／ 1-4 アイテム ／ 右クリック 構える ／ E 使う・蘇生・話しかける ／ Space ジャンプ ／ M 音を消す</p>
-      <p class="hint">スマホ：左スティック 移動（外まで倒すとダッシュ）／ 画面をなぞる 視点 ／ 右下の大きいボタン 攻撃 ／ 使う・R・必殺・技・狙</p>
+      <p class="hint">スマホ：左スティック 移動（外まで倒すとダッシュ）／ 画面をなぞる 視点 ／ 右下の大きいボタン 攻撃 ／ 使う・R・必殺・技は右下 ／ <b>狙うボタンは左のスティックの上</b></p>
       <p class="hint">待機場では、お店の人に近づいて E（スマホは「使」）で話しかけます。奥のゲートでバトルへ。</p>
       <p class="hint">待機場のチャット：Enter（スマホは左上の「💬 話す」）で書いて、もう一度 Enter で送ります。Esc でやめます。</p>
       <button id="btn-resume" class="primary" type="button">再開</button>

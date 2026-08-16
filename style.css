@@ -67,6 +67,19 @@ input[type=text]:focus, input[type=password]:focus, input[type=number]:focus {
 .card .desc { font-size: 11px; color: #8b96a3; margin-top: 6px; line-height: 1.6; }
 .card .stat { font-size: 11px; color: #6fa8dc; margin-top: 6px; }
 
+/* ログイン画面 */
+#login-view, #start-view { display: flex; flex-direction: column; gap: 18px; }
+#login-view.hidden, #start-view.hidden { display: none; }
+.check {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; color: #9aa5b1;
+  cursor: pointer; margin-top: 2px;
+}
+.check input { width: 18px; height: 18px; accent-color: #4d7ea8; flex: 0 0 auto; }
+.error {
+  font-size: 13px; color: #ff9c9c; background: #2a1618; border: 1px solid #5c2b2b;
+  border-radius: 8px; padding: 9px 11px; line-height: 1.5;
+}
+
 .members { list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .members li { background: #0f1319; border: 1px solid #2a323d; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
 .members .host { color: #e8c46a; font-size: 11px; margin-left: 6px; }
@@ -90,6 +103,8 @@ button.ghost { background: transparent; border: 1px solid #2a323d; color: #b6c0c
   .members li { padding: 8px 10px; font-size: 12px; }
   button.primary, button.ghost { padding: 11px; font-size: 14px; }
   #btn-start { position: sticky; bottom: 0; box-shadow: 0 0 0 14px #161b23; }
+  #login-view, #start-view { gap: 12px; }
+  .hint { font-size: 11px; line-height: 1.5; }
 }
 
 /* ---------- HUD ---------- */
@@ -189,7 +204,7 @@ body.touch #touch-ui { display: block; }
   display: grid; gap: 10px;
   grid-template-areas:
     "skill  ult   reload"
-    ".      aim   use"
+    ".      .     use"
     ".      .     fire";
   justify-items: center; align-items: end;
 }
@@ -198,7 +213,13 @@ body.touch #touch-ui { display: block; }
 #btn-reload { grid-area: reload; }
 #btn-use { grid-area: use; }
 #btn-fire { grid-area: fire; }
-#btn-aim { grid-area: aim; }
+
+/* 狙うボタンだけ左手側。移動スティックのすぐ上に置いて、
+   歩きながら構えられるようにする */
+#btn-aim {
+  position: absolute;
+  left: calc(54px + var(--safe-l)); bottom: calc(164px + var(--safe-b));
+}
 #touch-slots {
   position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(14px + var(--safe-b));
   display: flex; gap: 8px;
@@ -353,6 +374,7 @@ body.touch #build-info { bottom: calc(62px + var(--safe-b)); font-size: 12px; }
 @media (orientation: landscape) and (max-height: 400px) {
   #stick { width: 112px; height: 112px; }
   #stick-knob { width: 50px; height: 50px; margin: -25px 0 0 -25px; }
+  #btn-aim { left: calc(51px + var(--safe-l)); bottom: calc(140px + var(--safe-b)); }
   #touch-buttons { gap: 8px; }
   .tbtn { width: 50px; height: 50px; font-size: 13px; }
   .tbtn.big { width: 80px; height: 80px; font-size: 16px; }

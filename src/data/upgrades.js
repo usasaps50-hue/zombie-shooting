@@ -82,17 +82,20 @@ export const UPGRADES = {
   death: {
     id: 'death',
     levels: [
-      { desc: '16ダメージ／8秒に1回／半径3.0m' },
-      { cost: 250, damage: 22, cooldown: 7.0, blast: 3.3, desc: '22ダメージ／7秒に1回／半径3.3m' },
-      { cost: 450, damage: 28, cooldown: 6.5, blast: 3.7, desc: '28ダメージ／6.5秒に1回／半径3.7m' },
-      { cost: 700, damage: 34, cooldown: 5.5, blast: 4.1, desc: '34ダメージ／5.5秒に1回／半径4.1m' },
+      // 1発の重さと範囲で勝負する杖。それでも間が空きすぎて使いづらかったので、
+      // リボーンロッドの秒あたりの火力を超えないところまで間隔を詰めた
+      // （Lv5：40 ÷ 2.2秒 ≒ 18/秒。リボーンは 20 ÷ 0.6秒 ≒ 33/秒）
+      { desc: '16ダメージ／3.6秒に1回／半径3.0m' },
+      { cost: 250, damage: 22, cooldown: 3.2, blast: 3.3, desc: '22ダメージ／3.2秒に1回／半径3.3m' },
+      { cost: 450, damage: 28, cooldown: 2.9, blast: 3.7, desc: '28ダメージ／2.9秒に1回／半径3.7m' },
+      { cost: 700, damage: 34, cooldown: 2.5, blast: 4.1, desc: '34ダメージ／2.5秒に1回／半径4.1m' },
       {
         cost: 1000,
         gold: true,
         damage: 40,
-        cooldown: 5.0,
+        cooldown: 2.2,
         blast: 4.5,
-        desc: '見た目が金色／40ダメージ／5秒に1回／半径4.5m',
+        desc: '見た目が金色／40ダメージ／2.2秒に1回／半径4.5m',
       },
     ],
   },

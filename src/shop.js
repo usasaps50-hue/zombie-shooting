@@ -8,7 +8,7 @@ import {
   progress, levelOf, upgradeStatus, upgrade,
   classLevelOf, classStatus, upgradeClass,
   ownsItem, ownsJob, buyItem, buyJob, maxSlots, addCoins,
-  playerName, setPlayerName,
+  playerName,
 } from './progress.js';
 import { netReady } from './data/netconfig.js';
 
@@ -321,14 +321,13 @@ export class Shop {
     const form = document.createElement('div');
     form.className = 'gate-form';
     form.innerHTML = `
-      <label for="gate-name">なまえ（他の人に見えます）</label>
-      <input id="gate-name" type="text" maxlength="12" autocomplete="off" value="${escapeHtml(playerName())}">
       <label for="gate-pass">合言葉</label>
       <div class="pass-row">
         <input id="gate-pass" type="text" maxlength="16" autocomplete="off" value="${escapeHtml(this.loadout.passphrase)}">
         <button id="gate-random" class="ghost" type="button">ランダム</button>
       </div>
       <div class="gate-summary">
+        <span>👤 ${escapeHtml(playerName())}</span>
         <span>${job.name} Lv${classLevelOf(job.id)}</span>
         <span>${this.loadout.items.map((id) => `${ITEMS[id].name} Lv${levelOf(id)}`).join('　')}</span>
         <span>${netReady() ? '🟢 オンライン' : '⚪ ひとりで遊ぶ'}</span>
@@ -337,13 +336,12 @@ export class Shop {
     this.listEl.appendChild(form);
 
     const input = form.querySelector('#gate-pass');
-    const nameEl = form.querySelector('#gate-name');
     form.querySelector('#gate-random').addEventListener('click', () => {
       input.value = randomPass();
     });
     form.querySelector('#gate-go').addEventListener('click', () => {
       this.loadout.passphrase = input.value.trim() || 'ひとり';
-      this.loadout.name = setPlayerName(nameEl.value) || playerName();
+      this.loadout.name = playerName();
       this.close();
       this.onBattle();
     });

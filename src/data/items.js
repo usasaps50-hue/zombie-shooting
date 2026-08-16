@@ -102,7 +102,8 @@ export const ITEMS = {
     kind: 'magic',
     damage: 16,
     blast: 3.0,
-    cooldown: 8.0,
+    // レベル1の間隔。レベルを上げると data/upgrades.js の値で上書きされる
+    cooldown: 3.6,
     swingTime: 0.55,
     range: 26,
     noise: 20,

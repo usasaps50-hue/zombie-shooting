@@ -152,7 +152,12 @@ const shop = new Shop(ITEM_ICONS, {
   onChange: () => hud.setToast('そうびを変えた', 1.2),
   onBattle: () => startGame(loadout),
 });
-const lobby = new Lobby(enterHub);
+const lobby = new Lobby(enterHub, () => {
+  // ログアウト。オンラインの部屋からも出て、チャットも消す
+  leaveRoom();
+  chat.clear();
+  chat.hide();
+});
 
 // 待機場のチャット。書いている間はゲームの操作を止める
 const chat = new Chat({

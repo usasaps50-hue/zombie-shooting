@@ -4,13 +4,16 @@ import {
   CLASS_LEVEL_COST, CLASS_MAX_LEVEL, classEffects, JOB_PRICE, ITEM_PRICE,
 } from './data/classes.js';
 
+// アカウントごとに `zombie-shooting-progress:<アカウントid>` へ保存する。
+// アカウントを入れる前からあった保存データは、一番はじめのアカウントが引き継ぐ
 const KEY = 'zombie-shooting-progress';
+const OLD_BACKUP_KEY = 'zombie-shooting-progress-backup';
 
 // 値段0のものは最初から持っている
 const freeIds = (prices) => Object.keys(prices).filter((id) => !prices[id]);
 
 const empty = () => ({
-  // オンラインで他の人に見える名前
+  // オンラインで他の人に見える名前（＝ログインしたアカウントのなまえ）
   name: '',
   coins: 0,
   levels: Object.fromEntries(Object.keys(UPGRADES).map((id) => [id, 1])),
@@ -19,50 +22,72 @@ const empty = () => ({
   ownedJobs: freeIds(JOB_PRICE),
 });
 
-// レベルは次に遊ぶときも残ってほしいので、ブラウザに保存する。
-// プライベートモードなどで保存できなくても、遊べなくならないようにする
-function load() {
+function readSave(key) {
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY));
-    if (!saved) return empty();
-    const base = empty();
-    return {
-      name: typeof saved.name === 'string' ? saved.name : '',
-      coins: Number(saved.coins) || 0,
-      levels: { ...base.levels, ...saved.levels },
-      classLevels: { ...base.classLevels, ...saved.classLevels },
-      // 買ったものが消えないよう、無料のものと合わせる
-      ownedItems: [...new Set([...base.ownedItems, ...(saved.ownedItems ?? [])])],
-      ownedJobs: [...new Set([...base.ownedJobs, ...(saved.ownedJobs ?? [])])],
-    };
+    return JSON.parse(localStorage.getItem(key));
   } catch {
-    return empty();
+    return null;
   }
 }
 
-export const progress = load();
+// 足りないところを初期値でうめる。買ったものが消えないよう、無料のものと合わせる
+function normalize(saved) {
+  const base = empty();
+  if (!saved) return base;
+  return {
+    name: typeof saved.name === 'string' ? saved.name : '',
+    coins: Number(saved.coins) || 0,
+    levels: { ...base.levels, ...saved.levels },
+    classLevels: { ...base.classLevels, ...saved.classLevels },
+    ownedItems: [...new Set([...base.ownedItems, ...(saved.ownedItems ?? [])])],
+    ownedJobs: [...new Set([...base.ownedJobs, ...(saved.ownedJobs ?? [])])],
+  };
+}
+
+// ゲーム中はずっとこの1つを見る。ログインするたび中身を入れ替える
+export const progress = empty();
+// ログインするまでは保存先が決まらないので、その間は保存しない
+let saveKey = null;
+
+// ログインした人の保存データに切り替える。
+// takeOldSave は「アカウントより前の保存データを引き継ぐか」（一番はじめの人だけ）
+export function useAccount(account, takeOldSave = false) {
+  saveKey = `${KEY}:${account.id}`;
+  let saved = readSave(saveKey);
+  if (!saved && takeOldSave) {
+    saved = readSave(KEY);
+    if (saved) {
+      // 引き継いだあと、元のデータは消さずに名前を変えて残しておく
+      try {
+        localStorage.setItem(OLD_BACKUP_KEY, JSON.stringify(saved));
+        localStorage.removeItem(KEY);
+      } catch { /* 動かせなくても、引き継ぎ自体はできている */ }
+    }
+  }
+  Object.assign(progress, normalize(saved));
+  // なまえはアカウントのものにそろえる
+  progress.name = account.name;
+  save();
+}
+
+// ログアウト。保存先を外して、中身を空に戻す
+export function clearAccount() {
+  saveKey = null;
+  Object.assign(progress, empty());
+}
 
 export function save() {
+  if (!saveKey) return;
   try {
-    localStorage.setItem(KEY, JSON.stringify(progress));
+    localStorage.setItem(saveKey, JSON.stringify(progress));
   } catch {
     /* 保存できない環境ではその場かぎりの進行になる */
   }
 }
 
-// 名前を決めていない人には、毎回同じ番号つきの名前を作って渡す
+// オンラインで他の人に見えるなまえ。ログインしたアカウントのなまえを使う
 export function playerName() {
-  if (!progress.name) {
-    progress.name = `プレイヤー${Math.floor(1000 + Math.random() * 9000)}`;
-    save();
-  }
-  return progress.name;
-}
-
-export function setPlayerName(name) {
-  progress.name = name.trim().slice(0, 12);
-  save();
-  return progress.name;
+  return progress.name || 'プレイヤー';
 }
 
 export function addCoins(amount) {
