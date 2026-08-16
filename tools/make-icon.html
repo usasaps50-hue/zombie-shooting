@@ -11,16 +11,21 @@
 </script>
 <script type="module">
 import * as THREE from 'three';
-const { Zombie } = await import('./src/zombie.js');
+const { Zombie } = await import('../src/zombie.js');
 
 const say = (m) => { document.getElementById('log').innerHTML += m + '<br>'; };
 
 // 通常ゾンビ（緑）をそのまま作って、顔だけを大きく写す
 const SIZE = 1024;
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+const q0 = new URLSearchParams(location.search);
+// bg を渡すとその色で塗りつぶす。渡さなければ背景は透明。
+// iOS のホーム画面は透明を黒にしてしまうので、そちら用には必ず bg を渡す
+const BG = q0.get('bg');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: !BG, preserveDrawingBuffer: true });
 renderer.setSize(SIZE, SIZE);
 renderer.setPixelRatio(1);
-renderer.setClearColor(0x000000, 0);
+if (BG) renderer.setClearColor(parseInt(BG, 16), 1);
+else renderer.setClearColor(0x000000, 0);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
 
@@ -49,7 +54,7 @@ const bounds = new THREE.Box3().setFromObject(zombie.neck);
 const head = bounds.getCenter(new THREE.Vector3());
 const span = bounds.getSize(new THREE.Vector3());
 
-const q = new URLSearchParams(location.search);
+const q = q0;
 const FOV = Number(q.get('fov') ?? 30);
 // 顔が画面のどれくらいを占めるか。小さくするほど余白が増える
 const FILL = Number(q.get('fill') ?? 0.78);

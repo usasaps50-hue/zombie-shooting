@@ -28,6 +28,23 @@ http://localhost:5173 を開く。待機ロビーで職業とアイテムを選�
 pkill -f "http.server 8765"
 ```
 
+## スマホのホーム画面に追加する
+
+iPhone の Safari で開いて、共有ボタン → **「ホーム画面に追加」**。**通常ゾンビの顔のアイコン**で並び、タップすると**Safari の枠なしの全画面**で起動する。
+
+- iOS 用アイコンは `icon/apple-touch-icon.png`（180px）。**iOS は透明を黒く塗ってしまう**ので、背景を塗った専用の絵（`icon/zombie-face-solid.png`）から作っている
+- Android の Chrome 用に `manifest.webmanifest`（192px・512px、全画面・横向き固定）も置いてある
+- ブラウザのタブ用に `icon/favicon-32.png`
+
+スマホから開くには、ゲームが同じ Wi-Fi から見える必要がある。デスクトップのアプリを起動しておけば、Mac の IP アドレスでつながる:
+
+```bash
+# Mac の IP を調べる
+ipconfig getifaddr en0
+```
+
+スマホの Safari で `http://<いま出たIP>:8765/index.html` を開く。
+
 ## 操作
 
 | 操作 | PC | スマホ |
