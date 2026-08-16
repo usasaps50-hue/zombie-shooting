@@ -18,7 +18,7 @@ import { progress, levelOf, addCoins, classBonus, maxSlots, playerName } from '.
 import { Teammate, Enemy } from './entities.js';
 import { Net, Ticker } from './net.js';
 import { RemotePlayer, packPlayer } from './remote.js';
-import { NET, playerHz } from './data/netconfig.js';
+import { NET, playerHz, HUB_ROOM } from './data/netconfig.js';
 import { packWorld, applyEnemies, applyStructures, unpackWaves } from './netsync.js';
 import { Effects } from './effects.js';
 import { Builder } from './build.js';
@@ -159,7 +159,8 @@ function enterHub(next) {
     loadout = { ...next, items: [...next.items] };
     syncJobItems(loadout);
   }
-  leaveRoom();
+  // 姿はシーンごとに置き直すので、いったん全部消す
+  clearRemotes();
   game = null;
   paused = false;
   place = 'hub';
@@ -178,6 +179,12 @@ function enterHub(next) {
   hud.setToast('待機場へようこそ。お店で装備をえらんで、奥のゲートからバトルへ（広場の左手前、緑に光る柱が「あやしい端末」）', 5);
   if (IS_TOUCH) goLandscapeFullscreen();
   input.requestLock();
+
+  // 待機場は合言葉に関係なく、みんな同じ部屋に集まる
+  net.join(HUB_ROOM, {
+    name: loadout.name || playerName(),
+    jobId: loadout.jobId,
+  }).catch(() => {});
 }
 
 // 持っていく武器から、使えるスキルを決める
@@ -247,7 +254,7 @@ function startGame(loadout) {
 
 // 部屋を出るときの後片付け
 function clearRemotes() {
-  for (const remote of remotes.values()) remote.dispose(scene);
+  for (const remote of remotes.values()) remote.dispose();
   remotes.clear();
 }
 
@@ -431,19 +438,25 @@ function castRod(item) {
 }
 
 // リボーンロッドで倒した敵を、確率で味方として起こす
-function tryRevive(def, position, item) {
+function tryRevive(def, position, item, ownerId = net.id) {
   if (Math.random() >= (item.reviveChance ?? 0)) return false;
   minions.add({
     skin: def.skin,
     armor: def.armor,
     outfit: def.outfit,
+    defId: def.id,
+    ownerId,
     maxHp: Math.max(1, Math.round(def.hp / 2)),
   }, position);
   effects.raise(position);
   sfx.playAt('raise', position);
-  // 必殺技のゲージは「味方にした数」で貯まる
-  game?.ult.add('revive', 1);
-  hud.setToast(`${def.name}が味方になった！（味方 ${minions.count}体）`, 1.8);
+  // 必殺技のゲージは「味方にした数」で貯まる。倒したのが他の人ならその人に渡す
+  if (ownerId === net.id) {
+    game?.ult.add('revive', 1);
+    hud.setToast(`${def.name}が味方になった！（味方 ${minions.count}体）`, 1.8);
+  } else {
+    net.send('mini', { to: ownerId, n: def.name });
+  }
   return true;
 }
 
@@ -546,7 +559,11 @@ function damageEnemy(enemy, amount, now, source = null, by = net.id) {
   // 子はダメージを自分で決めない。親にお願いして、結果を待つ
   if (net.online && !net.isHost) {
     if (!enemy.alive || enemy.invulnerable) return false;
-    net.send('hit', { i: enemies.indexOf(enemy), d: amount, by: net.id });
+    net.send('hit', {
+      i: enemies.indexOf(enemy), d: amount, by: net.id,
+      // リボーンロッドで当てたときは、倒れたら親に生き返らせてもらう
+      rev: source?.reviveChance ?? 0,
+    });
     // 手ごたえだけは自分の画面ですぐ出す
     const guess = Math.min(amount, enemy.hp);
     game?.ult.add('damage', guess);
@@ -590,14 +607,14 @@ function setupNet() {
       if (remote) {
         remote.setProfile(p);
       } else {
-        remotes.set(p.id, new RemotePlayer(scene, p));
+        remotes.set(p.id, new RemotePlayer(currentScene(), p));
         hud.setToast(`${p.name} が入ってきた`, 2.4);
       }
     }
     for (const [id, remote] of remotes) {
       if (list.some((p) => p.id === id)) continue;
       hud.setToast(`${remote.name} が出ていった`, 2.4);
-      remote.dispose(scene);
+      remote.dispose();
       remotes.delete(id);
     }
   });
@@ -620,7 +637,7 @@ function setupNet() {
     if (!remote) {
       const info = net.peers.get(msg.i);
       if (!info) return;
-      remote = new RemotePlayer(scene, info);
+      remote = new RemotePlayer(currentScene(), info);
       remotes.set(msg.i, remote);
     }
     remote.apply(msg.s, performance.now() / 1000);
@@ -646,6 +663,7 @@ function setupNet() {
     applyEnemies(msg.e, enemies);
     applyStructures(msg.s ?? [], { scene, builder });
     drones.netApply(msg.d ?? []);
+    minions.netApply(msg.m ?? []);
   });
 
   // 子から届いた「当てた」。親が本当に減らす
@@ -653,7 +671,33 @@ function setupNet() {
     if (!net.isHost) return;
     const enemy = enemies[msg.i];
     if (!enemy || !enemy.active) return;
-    damageEnemy(enemy, msg.d, performance.now() / 1000, null, msg.by);
+    // 倒したあとでは姿が分からなくなるので、先に控えておく
+    const def = enemy.def;
+    const spawn = enemy.position.clone();
+    const killed = damageEnemy(enemy, msg.d, performance.now() / 1000, null, msg.by);
+    if (killed && msg.rev) tryRevive(def, spawn, { reviveChance: msg.rev }, msg.by);
+  });
+
+  // 自分の味方が増えた（親が生き返らせてくれた）
+  net.on('mini', (msg) => {
+    if (msg.to !== net.id || !game) return;
+    game.ult.add('revive', 1);
+    sfx.play('raise');
+    hud.setToast(`${msg.n}が味方になった！`, 1.8);
+  });
+
+  // 子から「影を呼びたい」と頼まれた
+  net.on('shadow', (msg) => {
+    if (!net.isHost) return;
+    const owner = remotes.get(msg.by);
+    if (!owner) return;
+    for (let i = 0; i < SHADOW_ARMY.count; i++) {
+      const angle = (i / SHADOW_ARMY.count) * Math.PI * 2;
+      const spot = owner.position.clone().add(new THREE.Vector3(Math.sin(angle) * 2.2, 0, Math.cos(angle) * 2.2));
+      spot.y = floorHeight(colliders, spot.x, spot.z, spot.y + 0.4);
+      minions.add({ maxHp: SHADOW_ARMY.hp, black: true, ownerId: msg.by }, spot);
+      effects.raise(spot);
+    }
   });
 
   // 自分が倒したことになった。コインと素材はここでもらう
@@ -783,7 +827,7 @@ function placeNetStructure(typeId, position, yaw) {
 
 // 親が送る、いまの世界のようす
 function sendWorld() {
-  const packed = packWorld(enemies, builder.structures, waves, structureKey, drones);
+  const packed = packWorld(enemies, builder.structures, waves, structureKey, drones, minions);
   structureKey = packed.nextKey;
   net.send('w', packed.msg);
 }
@@ -974,12 +1018,17 @@ const ULT_ACTIONS = {
   necromancer: () => {
     const { player } = game;
     const feet = new THREE.Vector3(player.position.x, player.position.y - EYE_HEIGHT, player.position.z);
-    for (let i = 0; i < SHADOW_ARMY.count; i++) {
-      const angle = (i / SHADOW_ARMY.count) * Math.PI * 2;
-      const spot = feet.clone().add(new THREE.Vector3(Math.sin(angle) * 2.2, 0, Math.cos(angle) * 2.2));
-      spot.y = floorHeight(colliders, spot.x, spot.z, feet.y + 0.4);
-      minions.add({ maxHp: SHADOW_ARMY.hp, black: true }, spot);
-      effects.raise(spot, 0x9a6bff);
+    // 味方を動かすのは親なので、子のときは親に呼んでもらう
+    if (net.online && !net.isHost) {
+      net.send('shadow', { by: net.id });
+    } else {
+      for (let i = 0; i < SHADOW_ARMY.count; i++) {
+        const angle = (i / SHADOW_ARMY.count) * Math.PI * 2;
+        const spot = feet.clone().add(new THREE.Vector3(Math.sin(angle) * 2.2, 0, Math.cos(angle) * 2.2));
+        spot.y = floorHeight(colliders, spot.x, spot.z, feet.y + 0.4);
+        minions.add({ maxHp: SHADOW_ARMY.hp, black: true, ownerId: net.id }, spot);
+        effects.raise(spot, 0x9a6bff);
+      }
     }
     sfx.play('raise');
     hud.setToast(`${ULTIMATES.necromancer.name}！ 影を${SHADOW_ARMY.count}体 呼んだ（味方 ${minions.count}体）`, 2.6);
@@ -1307,10 +1356,15 @@ function enterZone(zone) {
 
 function updateHub(dt) {
   hubTime += dt;
+  sfx.setListener(camera);
   // 店員はずっと手を振っている
   for (const npc of hub.npcs) {
     npc.avatar.update(dt, { anim: { name: 'wave', t: hubTime }, speed: 0, pitch: 0 });
   }
+
+  // 買い物中でも、まわりの人は動いて見えていてほしい
+  updateRemotes(dt);
+  hud.updateNet(net);
 
   if (shop.open || paused) {
     hud.updateHub(dt, '');
@@ -1320,6 +1374,21 @@ function updateHub(dt) {
 
   hubPlayer.update(dt, input, hub.colliders);
   hubPlayer.applyToCamera(camera);
+
+  // 待機場でも自分の姿を送る。武器は持っていないので手ぶら
+  playerTick.hz = playerHz(net.count);
+  if (net.online && playerTick.ready(dt)) {
+    net.send('p', {
+      i: net.id,
+      s: packPlayer(hubPlayer, {
+        itemId: null,
+        gold: false,
+        silencer: false,
+        anim: { name: 'idle', t: 0 },
+        feetY: hubPlayer.position.y - EYE_HEIGHT,
+      }),
+    });
+  }
 
   const zone = nearestZone();
   // 押しっぱなしで開き直さないよう、押した瞬間だけ拾う
@@ -1441,20 +1510,19 @@ function frame() {
   }
 
   // ネクロマンサーの味方。近くの敵に襲いかかり、いなければ主人についてまわる
-  if (game && !paused) {
-    const owner = game.player.downed
-      ? null
-      : new THREE.Vector3(game.player.position.x, game.player.position.y - EYE_HEIGHT, game.player.position.z);
+  if (simulating) {
     minions.update(dt, now, {
-      owner,
+      ownerOf: minionAnchor,
       enemies,
       colliders,
       structures: builder.structures,
       onAttack: (minion, target, damage) => {
         sfx.playAt('hit', minion.position, { volume: 0.7 });
-        damageEnemy(target, damage, now, null);
+        damageEnemy(target, damage, now, null, minion.ownerId ?? net.id);
       },
     });
+  } else {
+    minions.netUpdate(dt);
   }
 
   // 爆発のダメージも親が決める。子の画面では火の玉だけ出す
@@ -1607,15 +1675,7 @@ function frame() {
     teammates[1].update(dt, { itemId: null, anim: { name: 'idle', t: 0 } });
   }
 
-  // 他のプレイヤーの見た目。しばらく音沙汰がない人は消す
-  for (const [id, remote] of remotes) {
-    if (net.online && now - remote.lastSeen > NET.timeout && remote.lastSeen) {
-      remote.dispose(scene);
-      remotes.delete(id);
-      continue;
-    }
-    remote.update(dt);
-  }
+  updateRemotes(dt);
   hud.updateNet(net);
 
   renderer.render(scene, camera);
@@ -1671,6 +1731,35 @@ function radarData(player) {
     allies: minions.list.filter((m) => m.alive).map((m) => rel(m.position)),
     mates: [...remotes.values()].filter((r) => r.placed && !r.downed).map((r) => rel(r.position)),
   };
+}
+
+// 他のプレイヤーの見た目。しばらく音沙汰がない人は消す
+function updateRemotes(dt) {
+  const now = performance.now() / 1000;
+  for (const [id, remote] of remotes) {
+    if (net.online && remote.lastSeen && now - remote.lastSeen > NET.timeout) {
+      remote.dispose();
+      remotes.delete(id);
+      continue;
+    }
+    remote.update(dt);
+  }
+}
+
+// いま人やゾンビを置いているシーン。待機場とバトルで入れ替わる
+function currentScene() {
+  return place === 'hub' ? hub.scene : scene;
+}
+
+// 味方がついてまわる先。持ち主の足元を返す
+function minionAnchor(ownerId) {
+  if (!ownerId || ownerId === net.id) {
+    if (!game || game.player.downed) return null;
+    const p = game.player.position;
+    return new THREE.Vector3(p.x, p.y - EYE_HEIGHT, p.z);
+  }
+  const remote = remotes.get(ownerId);
+  return remote && !remote.downed ? remote.position : null;
 }
 
 // ドローンが回る中心。持ち主の居場所を返す

@@ -49,6 +49,8 @@ export class RemotePlayer {
     this.anim = { name: 'idle', t: 0 };
     this.firing = false;
 
+    // どのシーンに置いたか覚えておく（待機場とバトルで入れ替わる）
+    this.scene = scene;
     this.avatar = new Avatar(JOBS[this.jobId]?.color ?? 0x5f7f9f);
     this.avatar.setHat(this.jobId);
     this.label = makeLabel(1.8);
@@ -179,7 +181,7 @@ export class RemotePlayer {
     this.avatar.update(dt, { anim: this.anim, speed: this.speed, pitch: this.pitch });
   }
 
-  dispose(scene) {
+  dispose(scene = this.scene) {
     this.label.dispose();
     scene.remove(this.avatar.root);
     this.avatar.root.traverse((o) => {

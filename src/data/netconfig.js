@@ -34,6 +34,10 @@ export function playerHz(playerCount) {
   return 6;
 }
 
+// 待機場でみんなが集まる部屋。バトルは合言葉ごとに分かれるが、
+// 待機場は誰でも顔を合わせられるように1つにしてある
+export const HUB_ROOM = 'まちあわせ';
+
 export function netReady() {
   return SUPABASE_URL.startsWith('http') && SUPABASE_KEY.length > 20;
 }

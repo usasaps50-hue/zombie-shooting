@@ -11,7 +11,7 @@ const BUILD_IDS = Object.keys(BUILDS);
 const r2 = (n) => Math.round(n * 100) / 100;
 
 // 親：いまの世界をまとめる。nextKey は建物につける通し番号を返すために使う
-export function packWorld(enemies, structures, waves, nextKey, drones = null) {
+export function packWorld(enemies, structures, waves, nextKey, drones = null, minions = null) {
   let key = nextKey;
   const e = [];
   enemies.forEach((enemy, i) => {
@@ -34,6 +34,8 @@ export function packWorld(enemies, structures, waves, nextKey, drones = null) {
   const msg = {
     // ドローンは持ち主のまわりを回るだけなので、位置と向きだけ送る
     d: drones ? drones.netPack() : [],
+    // ネクロマンサーの味方
+    m: minions ? minions.netPack() : [],
     w: [
       waves.wave,
       waves.remaining,

@@ -2,6 +2,12 @@ import * as THREE from 'three';
 import { Zombie } from './zombie.js';
 import { makeLabel, hpColor } from './label.js';
 import { floorHeight, STEP_HEIGHT, STEP_SLACK } from './player.js';
+import { ENEMIES } from './data/jobs.js';
+
+// 通信でやり取りするときの並び。増やすときは必ず末尾に足す
+const NET_IDS = Object.keys(ENEMIES);
+const NET_MODES = ['idle', 'walk', 'attack', 'hit', 'death'];
+const r2 = (n) => Math.round(n * 100) / 100;
 
 // ネクロマンサーの味方。リボーンロッドで倒した敵が生き返ったものと、
 // 必殺技で呼び出す真っ黒な影の2種類がある。どちらも動きは同じで、
@@ -30,9 +36,15 @@ const tmp = new THREE.Vector3();
 
 export class Minion {
   // skin/armor は元のゾンビの見た目。black を立てると真っ黒な影になる
-  constructor(scene, { skin = 'green', armor = null, outfit = null, maxHp = 50, black = false } = {}) {
+  constructor(scene, {
+    skin = 'green', armor = null, outfit = null, maxHp = 50, black = false,
+    defId = null, ownerId = null,
+  } = {}) {
     this.scene = scene;
     this.black = black;
+    // 元になったゾンビの種類と、連れている人。どちらも通信用
+    this.defId = defId;
+    this.ownerId = ownerId;
     this.maxHp = Math.max(1, Math.round(maxHp));
     this.hp = this.maxHp;
     this.state = 'rise';
@@ -183,6 +195,52 @@ export class Minion {
     return best;
   }
 
+  // 親が送る、この1体ぶんの状態
+  netPack(index) {
+    return [
+      index,
+      this.black ? -1 : NET_IDS.indexOf(this.defId),
+      r2(this.root.position.x), r2(this.root.position.y), r2(this.root.position.z),
+      r2(this.facing),
+      Math.max(0, NET_MODES.indexOf(this.zombie.mode)),
+      Math.ceil(this.hp),
+      this.maxHp,
+    ];
+  }
+
+  // 子が受け取った状態を取り込む。位置は目標だけ決めて、動かすのは netUpdate
+  netApply(row) {
+    this.netTarget ??= new THREE.Vector3();
+    this.netTarget.set(row[2], row[3], row[4]);
+    this.netFacing = row[5];
+    if (!this.netPlaced) {
+      this.netPlaced = true;
+      this.root.position.copy(this.netTarget);
+      this.facing = this.netFacing;
+    }
+    const mode = NET_MODES[row[6]];
+    if (mode) this.zombie.setMode(mode);
+    if (row[7] !== this.hp || row[8] !== this.maxHp) {
+      this.hp = row[7];
+      this.maxHp = row[8];
+      this.state = this.hp > 0 ? 'follow' : 'dead';
+      this.#refresh();
+    }
+  }
+
+  // 子の毎フレーム。考えさせず、見た目だけ進める
+  netUpdate(dt) {
+    if (this.netTarget) {
+      this.root.position.lerp(this.netTarget, Math.min(dt * 14, 1));
+      let delta = ((this.netFacing - this.facing + Math.PI) % (Math.PI * 2)) - Math.PI;
+      if (delta < -Math.PI) delta += Math.PI * 2;
+      this.facing += delta * Math.min(dt * 14, 1);
+    }
+    this.root.rotation.y = this.facing + Math.PI;
+    this.zombie.update(dt);
+    this.#spin(dt);
+  }
+
   update(dt, now, { owner, enemies = [], colliders = [], structures = [], onAttack = () => {} }) {
     const p = this.root.position;
 
@@ -312,15 +370,41 @@ export class Minions {
     return minion;
   }
 
+  // ownerOf(ownerId) は、その持ち主の足元を返す関数。
+  // オンラインでは他の人の味方も動かすので、持ち主ごとに聞く
   update(dt, now, world) {
+    const { ownerOf, ...rest } = world;
     for (let i = this.list.length - 1; i >= 0; i--) {
       const minion = this.list[i];
-      minion.update(dt, now, world);
+      minion.update(dt, now, { ...rest, owner: ownerOf ? ownerOf(minion.ownerId) : world.owner });
       if (minion.finished) {
         minion.dispose();
         this.list.splice(i, 1);
       }
     }
+  }
+
+  // 親が送る一覧
+  netPack() {
+    return this.list.filter((m) => m.alive).map((m, i) => m.netPack(i));
+  }
+
+  // 子の側。届いた数に合わせて出したり消したりする
+  netApply(rows) {
+    while (this.list.length > rows.length) this.list.pop().dispose();
+    while (this.list.length < rows.length) {
+      const row = rows[this.list.length];
+      const def = row[1] >= 0 ? ENEMIES[NET_IDS[row[1]]] : null;
+      this.list.push(new Minion(this.scene, def
+        ? { skin: def.skin, armor: def.armor, outfit: def.outfit, maxHp: row[8], defId: def.id }
+        : { maxHp: row[8], black: true }));
+    }
+    rows.forEach((row, i) => this.list[i].netApply(row));
+  }
+
+  // 子の毎フレーム。撃たせず、見た目だけ動かす
+  netUpdate(dt) {
+    for (const minion of this.list) minion.netUpdate(dt);
   }
 
   // ゾンビの攻撃が当たる相手として渡すための一覧
