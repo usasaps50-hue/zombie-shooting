@@ -77,6 +77,18 @@
 
     <div id="toast" class="hidden"></div>
 
+    <!-- 待機場のチャット（左上）。バトル中は出ない -->
+    <div id="chat" class="hidden">
+      <ul id="chat-log"></ul>
+      <div id="chat-bar">
+        <span id="chat-bar-hint">💬 話す（Enter）</span>
+        <input id="chat-input" type="text" maxlength="90" autocomplete="off"
+               autocapitalize="off" autocorrect="off" spellcheck="false"
+               enterkeyhint="send" placeholder="メッセージを書いて Enter">
+        <span id="chat-count"></span>
+      </div>
+    </div>
+
     <!-- スマホ操作 -->
     <div id="touch-ui">
       <button id="btn-pause" class="tbtn tiny" type="button">॥</button>
@@ -119,6 +131,7 @@
       <p class="hint">W A S D 移動 ／ マウス 視点 ／ 左クリック 攻撃 ／ R リロード・切替 ／ Q 必殺技 ／ F スキル ／ 1-4 アイテム ／ 右クリック 構える ／ E 使う・蘇生・話しかける ／ Space ジャンプ ／ M 音を消す</p>
       <p class="hint">スマホ：左スティック 移動（外まで倒すとダッシュ）／ 画面をなぞる 視点 ／ 右下の大きいボタン 攻撃 ／ 使う・R・必殺・技・狙</p>
       <p class="hint">待機場では、お店の人に近づいて E（スマホは「使」）で話しかけます。奥のゲートでバトルへ。</p>
+      <p class="hint">待機場のチャット：Enter（スマホは左上の「💬 話す」）で書いて、もう一度 Enter で送ります。Esc でやめます。</p>
       <button id="btn-resume" class="primary" type="button">再開</button>
       <button id="btn-tohub" class="ghost" type="button">待機場に戻る</button>
       <button id="btn-tolobby" class="ghost" type="button">ロビーに戻る</button>

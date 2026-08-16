@@ -20,6 +20,8 @@ export class Input {
     this.slotQueued = null;
     this.locked = false;
     this.isTouch = IS_TOUCH;
+    // チャットに文字を打っている間は true。ゲームの操作を全部止める
+    this.textMode = false;
 
     this.#bindKeyboard();
     this.#bindMouse();
@@ -96,6 +98,8 @@ export class Input {
       this.use = keys.has('KeyE');
     };
     addEventListener('keydown', (e) => {
+      // チャットに書いている間は、キーを操作として拾わない
+      if (this.textMode) return;
       if (e.repeat) return;
       keys.add(e.code);
       if (e.code === 'Space') this.jumpQueued = true;
@@ -112,6 +116,14 @@ export class Input {
       keys.delete(e.code);
       sync();
     });
+    // 打ち始めたら、押しっぱなしになっているキーを離した扱いにする
+    this.setTextMode = (on) => {
+      this.textMode = on;
+      if (!on) return;
+      keys.clear();
+      sync();
+      this.reset();
+    };
     addEventListener('blur', () => {
       keys.clear();
       this.reset();

@@ -35,6 +35,7 @@ import { ARMOR_GUN_REDUCTION } from './data/classes.js';
 import { IS_TOUCH, QUALITY } from './device.js';
 import { sfx } from './audio.js';
 import { Minions, MINION } from './minion.js';
+import { Chat, cleanText } from './chat.js';
 
 const canvas = document.getElementById('game');
 
@@ -153,6 +154,24 @@ const shop = new Shop(ITEM_ICONS, {
 });
 const lobby = new Lobby(enterHub);
 
+// 待機場のチャット。書いている間はゲームの操作を止める
+const chat = new Chat({
+  onOpen: () => {
+    input.setTextMode(true);
+    input.releaseLock();
+  },
+  onClose: () => {
+    input.setTextMode(false);
+    if (place === 'hub' && !paused && !shop.open) input.requestLock();
+  },
+  onSend: (text) => {
+    const me = loadout.name || playerName();
+    chat.say(me, text, { self: true });
+    sfx.play('chat');
+    net.send('chat', { i: net.id, n: me, m: text });
+  },
+});
+
 // 待機場へ。カメラを待機場のシーンに移して歩けるようにする
 function enterHub(next) {
   if (next) {
@@ -176,6 +195,7 @@ function enterHub(next) {
   document.body.classList.add('hub');
   pauseEl.classList.add('hidden');
   hud.show();
+  chat.show();
   hud.setToast('待機場へようこそ。お店で装備をえらんで、奥のゲートからバトルへ（広場の左手前、緑に光る柱が「あやしい端末」）', 5);
   if (IS_TOUCH) goLandscapeFullscreen();
   input.requestLock();
@@ -225,6 +245,7 @@ function startGame(loadout) {
   hubPlayer = null;
   scene.add(camera);
   document.body.classList.remove('hub');
+  chat.hide();
   input.reset();
   builder.clear();
   projectiles.clear();
@@ -324,7 +345,7 @@ for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
   addEventListener(ev, () => sfx.unlock(), { once: false, passive: true });
 }
 
-const playing = () => place !== 'lobby' && !paused && !shop.open;
+const playing = () => place !== 'lobby' && !paused && !shop.open && !chat.typing;
 
 document.getElementById('btn-pause').addEventListener('click', () => {
   if (place !== 'lobby') paused ? resume() : pause();
@@ -334,6 +355,13 @@ canvas.addEventListener('click', () => {
 });
 addEventListener('keydown', (e) => {
   if (place === 'lobby') return;
+  // 待機場では Enter でチャットをひらく（入力中のキーは chat.js が止めている）
+  if (e.code === 'Enter' && place === 'hub' && !paused && !shop.open) {
+    e.preventDefault();
+    chat.open();
+    return;
+  }
+  if (chat.typing) return;
   if (e.code === 'Escape') {
     if (shop.open) shop.close();
     else paused ? resume() : pause();
@@ -642,15 +670,27 @@ function setupNet() {
         remote.setProfile(p);
       } else {
         remotes.set(p.id, new RemotePlayer(currentScene(), p));
-        hud.setToast(`${p.name} が入ってきた`, 2.4);
+        if (place === 'hub') chat.system(`${p.name} が待機場に入ってきた`);
+        else hud.setToast(`${p.name} が入ってきた`, 2.4);
       }
     }
     for (const [id, remote] of remotes) {
       if (list.some((p) => p.id === id)) continue;
-      hud.setToast(`${remote.name} が出ていった`, 2.4);
+      if (place === 'hub') chat.system(`${remote.name} が出ていった`);
+      else hud.setToast(`${remote.name} が出ていった`, 2.4);
       remote.dispose();
       remotes.delete(id);
     }
+  });
+
+  // 誰かの発言。左上の欄と、その人の頭の上に出す
+  net.on('chat', (msg) => {
+    const name = cleanText(msg?.n).slice(0, 16) || 'プレイヤー';
+    const text = cleanText(msg?.m);
+    if (!text) return;
+    chat.say(name, text);
+    remotes.get(msg.i)?.say(text);
+    sfx.play('chat');
   });
 
   // つながった／切れたの知らせ。同じ知らせを何度も出さないようにする
@@ -1395,6 +1435,7 @@ function enterZone(zone) {
 function updateHub(dt) {
   hubTime += dt;
   sfx.setListener(camera);
+  chat.update(dt);
   // 店員はずっと手を振っている
   for (const npc of hub.npcs) {
     npc.avatar.update(dt, { anim: { name: 'wave', t: hubTime }, speed: 0, pitch: 0 });

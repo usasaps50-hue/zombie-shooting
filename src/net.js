@@ -17,7 +17,7 @@ function makeId() {
 
 // 送受信するイベントの名前。増やすときはここに足す
 const EVENTS = ['p', 'w', 'hit', 'kill', 'build', 'dmg', 'revive', 'ult', 'eshot', 'fx',
-  'buff', 'mini', 'shadow', 'gather'];
+  'buff', 'mini', 'shadow', 'gather', 'chat'];
 
 export class Net {
   constructor() {

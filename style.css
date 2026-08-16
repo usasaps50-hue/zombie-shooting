@@ -365,3 +365,48 @@ body.touch #build-info { bottom: calc(62px + var(--safe-b)); font-size: 12px; }
   .shop-card { padding: 8px; gap: 10px; }
   .shop-icon, .shop-emoji { width: 34px; height: 34px; flex-basis: 34px; }
 }
+
+/* ---------- 待機場のチャット（左上） ---------- */
+#chat {
+  position: absolute; left: calc(14px + var(--safe-l)); top: calc(10px + var(--safe-t));
+  width: min(340px, 44vw); pointer-events: none;
+  transition: opacity .4s;
+}
+/* しばらく誰も話していないときは、書いたものだけ薄くする（バーはそのまま） */
+#chat-log {
+  list-style: none; max-height: 30vh; overflow: hidden; transition: opacity .5s;
+  display: flex; flex-direction: column; justify-content: flex-end; gap: 1px;
+}
+#chat.idle #chat-log { opacity: .34; }
+#chat-log li {
+  font-size: 13px; line-height: 1.45; word-break: break-word;
+  text-shadow: 0 1px 3px #000, 0 0 6px #000;
+}
+.chat-name { font-weight: 700; }
+.chat-body { color: #e9eef4; }
+.chat-system { color: #9fb0c2; font-style: italic; }
+
+/* 「話す」のバー。押すと入力欄になる */
+#chat-bar {
+  margin-top: 6px; pointer-events: auto; cursor: text;
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(10, 14, 19, .6); border: 1px solid #39424e; border-radius: 8px;
+  padding: 5px 10px; font-size: 12px; color: #93a0ae;
+}
+#chat-input {
+  display: none; flex: 1; min-width: 0;
+  background: none; border: none; outline: none; padding: 0;
+  color: #e9eef4; font: inherit; font-size: 13px;
+}
+#chat-count { color: #d9a86a; font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* 入力中はバーを目立たせて、文字を書けるようにする */
+#chat.typing #chat-log { opacity: 1; }
+#chat.typing #chat-bar { background: rgba(10, 14, 19, .92); border-color: #6fa8dc; }
+#chat.typing #chat-bar-hint { display: none; }
+#chat.typing #chat-input { display: block; }
+
+/* 待機場だけに出す */
+body:not(.hub) #chat { display: none; }
+body.touch #chat { width: min(300px, 40vw); }
+body.touch #chat-log li { font-size: 12px; }

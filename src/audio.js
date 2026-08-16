@@ -334,6 +334,11 @@ class Sfx {
         this.#env(gain, at + 0.07, 0.005, 0.24, 0.4 * v);
         this.#tone('square', 1570, 1570, at + 0.07, 0.2, gain);
         break;
+      // チャットの発言。小さくやわらかい音にして、話すたびに耳につかないようにする
+      case 'chat':
+        this.#env(gain, at, 0.004, 0.1, 0.22 * v);
+        this.#tone('sine', 880, 1180, at, 0.09, gain);
+        break;
       case 'ui':
         this.#env(gain, at, 0.003, 0.08, 0.35 * v);
         this.#tone('square', 720, 900, at, 0.07, gain);

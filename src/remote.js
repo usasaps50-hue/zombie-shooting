@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Avatar } from './avatar.js';
-import { makeLabel, hpColor } from './label.js';
+import { makeLabel, makeBubble, hpColor } from './label.js';
 import { NET } from './data/netconfig.js';
 import { JOBS } from './data/jobs.js';
 
@@ -56,6 +56,13 @@ export class RemotePlayer {
     this.label = makeLabel(1.8);
     this.label.sprite.position.y = 2.15;
     this.avatar.root.add(this.label.sprite);
+
+    // チャットで話した言葉を、頭の上にしばらく浮かべる
+    this.bubble = makeBubble();
+    this.bubble.sprite.scale.set(2.6, 0.98, 1);
+    this.bubble.sprite.position.y = 3.05;
+    this.bubbleLeft = 0;
+    this.avatar.root.add(this.bubble.sprite);
 
     // 拡声器の効果がかかっている間だけ出す、足元の金の輪
     this.aura = new THREE.Mesh(
@@ -166,7 +173,20 @@ export class RemotePlayer {
     return this.avatar.root.rotation.y - Math.PI;
   }
 
+  // チャットの発言を頭の上に出す
+  say(text, seconds = 6) {
+    this.bubble.draw(text);
+    this.bubble.sprite.visible = true;
+    this.bubbleLeft = seconds;
+  }
+
   update(dt) {
+    if (this.bubbleLeft > 0) {
+      this.bubbleLeft -= dt;
+      if (this.bubbleLeft <= 0) this.bubble.sprite.visible = false;
+      // 消える直前だけすっと薄くする
+      else this.bubble.sprite.material.opacity = Math.min(1, this.bubbleLeft / 0.6);
+    }
     // 輪はゆっくり回して、止まって見えないようにする
     if (this.aura.visible) this.aura.rotation.z += dt * 1.5;
     const k = Math.min(dt * NET.lerpSpeed, 1);
@@ -183,6 +203,7 @@ export class RemotePlayer {
 
   dispose(scene = this.scene) {
     this.label.dispose();
+    this.bubble.dispose();
     scene.remove(this.avatar.root);
     this.avatar.root.traverse((o) => {
       if (!o.isMesh) return;
