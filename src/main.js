@@ -129,9 +129,9 @@ const FOV_AIM = 42;
 
 // HUDと店で使う武器アイコン。実際の3Dモデルを描いた画像（金色版も作っておく）
 const ITEM_ICONS = makeItemIcons([
-  'pistol', 'ak47', 'shovel', 'hammer', 'bandage', 'megaphone', 'knife', 'reborn', 'death',
+  'pistol', 'ak47', 'shovel', 'hammer', 'bandage', 'megaphone', 'knife', 'reborn', 'death', 'team',
   'pistol:gold', 'ak47:gold', 'shovel:gold', 'megaphone:gold', 'knife:gold',
-  'reborn:gold', 'death:gold',
+  'reborn:gold', 'death:gold', 'team:gold',
 ]);
 hud.setIcons(ITEM_ICONS);
 
@@ -357,6 +357,7 @@ function onWeaponEvent(ev) {
   }
   else if (ev.type === 'build') return build();
   else if (ev.type === 'buff') return useMegaphone(ev.item);
+  else if (ev.type === 'summon') return useTeamRod(ev.item);
   else if (ev.type === 'cast') return castRod(ev.item);
   else if (ev.type === 'cycleBuild') {
     const def = builder.cycleType(1);
@@ -494,6 +495,33 @@ function useMegaphone(item) {
   return true;
 }
 
+// チームロッド。散らばった味方を自分のところへ呼び集める
+function useTeamRod(item) {
+  const { player } = game;
+  if (player.downed) return false;
+  const feet = new THREE.Vector3(player.position.x, player.position.y - EYE_HEIGHT, player.position.z);
+
+  effects.rally(feet, 9);
+  sfx.play('rally');
+  makeNoise(player.position.clone(), item.noise ?? 0, performance.now() / 1000);
+
+  // 味方を動かしているのは親。子のときは親に呼んでもらう
+  if (net.online && !net.isHost) {
+    net.send('gather', { by: net.id, r: item.range, h: item.heal ?? 0 });
+    hud.setToast(`${item.name}！ 味方を呼んだ`, 1.8);
+    return true;
+  }
+
+  const { called, healed } = minions.callTo(net.id, feet, item.range, item.heal ?? 0);
+  if (!called) {
+    hud.setToast('呼べる味方がいない', 1.4);
+    return false;
+  }
+  const healText = healed > 0 ? `／HP+${Math.round(healed)}` : '';
+  hud.setToast(`${item.name}！ 味方${called}体を呼んだ${healText}`, 2.0);
+  return true;
+}
+
 function build() {
   // 子は自分では建てない。素材だけ払って、親に建ててもらう
   if (net.online && !net.isHost) {
@@ -532,11 +560,17 @@ function rollDrops(def) {
 }
 
 // 倒したごほうび。コイン・素材・武器レベルの特典をまとめて渡す
-function awardKill(def, source) {
+function awardKill(def, source, mine = true) {
   if (!game) return;
+  // コインは、誰が倒しても部屋にいる全員がもらう
   const coins = def.coins;
   addCoins(coins);
   game.coins += coins;
+  sfx.play('coin');
+  if (!mine) {
+    hud.setToast(`${def.name}が倒された　🪙+${coins}`, 1.4);
+    return;
+  }
   const bonus = source?.effects;
   // Lv3・Lv4のピストル：その武器で倒したときだけ効く
   if (bonus?.healOnKill) game.player.heal(bonus.healOnKill);
@@ -588,9 +622,9 @@ function damageEnemy(enemy, amount, now, source = null, by = net.id) {
 
   if (enemy.alive) return false;
   sfx.playAt('die', enemy.position);
-  if (mine) awardKill(enemy.def, source);
-  // 倒したのが他の人なら、その人にごほうびを渡すよう知らせる
-  else net.send('kill', { i: enemies.indexOf(enemy), t: enemy.def.id, by });
+  awardKill(enemy.def, mine ? source : null, mine);
+  // コインは全員ぶんなので、部屋のみんなに知らせる
+  net.send('kill', { t: enemy.def.id, by });
   return true;
 }
 
@@ -700,17 +734,21 @@ function setupNet() {
     }
   });
 
-  // 自分が倒したことになった。コインと素材はここでもらう
+  // 誰かがゾンビを倒した。コインは部屋にいる全員がもらう。
+  // 味方として起こすのは親がやるので、ここではやらない
   net.on('kill', (msg) => {
-    if (msg.by !== net.id) return;
     const def = ENEMIES[msg.t];
     if (!def) return;
-    const weapon = game?.weapons?.current ?? null;
-    awardKill(def, weapon);
-    // リボーンロッドで倒したのなら、こちらでも味方として起こす
-    if (weapon?.id === 'reborn' && enemies[msg.i]) {
-      tryRevive(def, enemies[msg.i].position.clone(), weapon);
-    }
+    const mine = msg.by === net.id;
+    awardKill(def, mine ? game?.weapons?.current ?? null : null, mine);
+  });
+
+  // 子から「味方を呼びたい」と頼まれた
+  net.on('gather', (msg) => {
+    if (!net.isHost) return;
+    const owner = remotes.get(msg.by);
+    if (!owner) return;
+    minions.callTo(msg.by, owner.position, msg.r, msg.h ?? 0);
   });
 
   // 子から届いた「ここに建てたい」。置けるかどうかは親が決める
@@ -1512,7 +1550,6 @@ function frame() {
   // ネクロマンサーの味方。近くの敵に襲いかかり、いなければ主人についてまわる
   if (simulating) {
     minions.update(dt, now, {
-      ownerOf: minionAnchor,
       enemies,
       colliders,
       structures: builder.structures,
@@ -1646,7 +1683,7 @@ function frame() {
       coins: progress.coins,
       waves: waveInfo(),
       buff: player.buffed ? { text: buffText(player.buff), left: player.buffLeft } : null,
-      cooldown: weapons.current?.kind === 'buff' ? weapons.cooldownLeft() : 0,
+      cooldown: ['buff', 'summon'].includes(weapons.current?.kind) ? weapons.cooldownLeft() : 0,
       blood: game.skill?.kind === 'bloodRelease'
         ? { value: player.blood, max: BLOOD.max, speedAtMax: BLOOD.speedAtMax, releasing: player.releasing }
         : null,
@@ -1751,17 +1788,6 @@ function currentScene() {
   return place === 'hub' ? hub.scene : scene;
 }
 
-// 味方がついてまわる先。持ち主の足元を返す
-function minionAnchor(ownerId) {
-  if (!ownerId || ownerId === net.id) {
-    if (!game || game.player.downed) return null;
-    const p = game.player.position;
-    return new THREE.Vector3(p.x, p.y - EYE_HEIGHT, p.z);
-  }
-  const remote = remotes.get(ownerId);
-  return remote && !remote.downed ? remote.position : null;
-}
-
 // ドローンが回る中心。持ち主の居場所を返す
 function droneAnchor(ownerId) {
   if (!ownerId || ownerId === net.id) {
@@ -1818,3 +1844,4 @@ addEventListener('resize', resize);
 // iOS は回転直後の innerWidth が古いままなので、少し待ってもう一度合わせる
 addEventListener('orientationchange', () => setTimeout(resize, 300));
 resize();
+

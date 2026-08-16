@@ -260,6 +260,18 @@ class Sfx {
         this.#tone('sine', 520, 780, at, 0.38, gain);
         break;
 
+      // チームロッドの召集。角笛のような呼びかけ
+      case 'rally': {
+        this.#env(gain, at, 0.02, 0.5, 0.7 * v);
+        this.#tone('sawtooth', 330, 494, at, 0.45, gain);
+        [494, 659, 784].forEach((f, i) => {
+          const t = at + 0.2 + i * 0.09;
+          this.#env(gain, t, 0.015, 0.55, 0.5 * v);
+          this.#tone('triangle', f, f, t, 0.5, gain);
+        });
+        break;
+      }
+
       // 拡声器
       case 'megaphone': {
         // 「ピーッ」というハウリングのあと、力の湧くファンファーレが鳴る。

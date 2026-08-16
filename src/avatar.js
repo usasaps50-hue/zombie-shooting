@@ -261,7 +261,7 @@ export class Avatar {
     // ナイフは短いので、腕をもう少し下げて持たせる
     const knife = this.itemId === 'knife';
     // 杖は両手で持つ
-    const rod = this.itemId === 'reborn' || this.itemId === 'death';
+    const rod = this.itemId === 'reborn' || this.itemId === 'death' || this.itemId === 'team';
     // 拡声器は口元に構えるので、腕をもっと上げる
     const megaphone = this.itemId === 'megaphone';
     let armR = holding ? HOLD_ARM_X[holding] : -step;
@@ -315,6 +315,18 @@ export class Avatar {
       armL = -0.4 - up * 1.2 + swing * 0.6;
       armLz = 0.3;
       this.body.rotation.x = -up * 0.15 + swing * 0.3;
+    } else if (name === 'rally') {
+      // 旗を高く掲げて、体ごと左右に振る
+      const raise = smooth(phase(t, 0, 0.3));
+      const back = smooth(phase(t, 0.78, 1));
+      const up = raise - back;
+      const wave = Math.sin(phase(t, 0.3, 0.8) * Math.PI * 2) * up;
+      armR = -0.6 - up * 2.0;
+      armRz = -0.4 - wave * 0.5;
+      armL = -0.5 - up * 1.0;
+      armLz = 0.35;
+      this.body.rotation.y = wave * 0.3;
+      this.body.rotation.x = -up * 0.12;
     } else if (name === 'shout') {
       // 拡声器を口元へ掲げて呼びかける
       const raise = smooth(phase(t, 0, 0.25)) - smooth(phase(t, 0.7, 1));
@@ -338,14 +350,15 @@ export class Avatar {
     if (megaphone && name !== 'shout') armR -= 0.35;
     if (knife && name !== 'swing') armR += 0.35;
     // 杖はシャベルと同じで、斜めに立てて持つ
-    if (rod && name !== 'cast') {
+    if (rod && name !== 'cast' && name !== 'rally') {
       armR = -0.6;
       armRz = -0.4;
       armL = -0.5;
       armLz = 0.35;
     }
 
-    if (name !== 'swing' && name !== 'wave' && name !== 'spin' && name !== 'shout' && name !== 'cast') {
+    if (name !== 'swing' && name !== 'wave' && name !== 'spin' && name !== 'shout'
+      && name !== 'cast' && name !== 'rally') {
       this.body.rotation.y = THREE.MathUtils.lerp(this.body.rotation.y, 0, dt * 10);
     }
 

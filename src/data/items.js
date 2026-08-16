@@ -109,6 +109,22 @@ export const ITEMS = {
     jobOnly: 'necromancer',
     icon: '💀',
   },
+  // 散らばった味方を、自分のところへ呼び集める旗の杖
+  team: {
+    id: 'team',
+    name: 'チームロッド',
+    kind: 'summon',
+    cooldown: 20,
+    swingTime: 0.7,
+    // 呼びかけが届く距離
+    range: 30,
+    // 集まった味方を、最大HPのこの割合ぶん回復する
+    heal: 0,
+    // 旗を振って呼ぶので、そこそこ音がする
+    noise: 12,
+    jobOnly: 'necromancer',
+    icon: '🚩',
+  },
   // 攻撃はできないが、近くの仲間（と自分）をまとめて強くする
   megaphone: {
     id: 'megaphone',
@@ -128,7 +144,7 @@ export const ITEMS = {
 };
 
 export const SELECTABLE_ITEMS = [
-  'pistol', 'ak47', 'shovel', 'megaphone', 'knife', 'reborn', 'death', 'hammer',
+  'pistol', 'ak47', 'shovel', 'megaphone', 'knife', 'reborn', 'death', 'team', 'hammer',
 ];
 // 持てる数はクラスのレベルで変わる（progress.js の maxSlots）
 export const BASE_SLOTS = 3;

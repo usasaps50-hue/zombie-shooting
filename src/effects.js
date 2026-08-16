@@ -455,6 +455,65 @@ export class Effects {
     });
   }
 
+  // チームロッドの召集。緑の輪が広がって、旗の光が立ちのぼる
+  rally(position, radius) {
+    const flat = (geometry, color, opacity) => {
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide,
+      }));
+      mesh.rotation.x = -Math.PI / 2;
+      return mesh;
+    };
+
+    const group = new THREE.Group();
+    group.position.set(position.x, position.y + 0.06, position.z);
+
+    // 外へ広がる輪を3重に
+    const rings = [];
+    for (let i = 0; i < 3; i++) {
+      const ring = flat(new THREE.RingGeometry(radius * 0.93, radius, 36), i === 1 ? 0xd9ffe6 : 0x6bff9a, 0.9);
+      rings.push({ ring, delay: i * 0.16 });
+      group.add(ring);
+    }
+    // 集合の目印になる光の柱
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.6, 1.1, 5.5, 14, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0x6bff9a, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide,
+      })
+    );
+    beam.position.y = 2.75;
+    // 上へ舞う光の粒
+    const motes = [];
+    for (let i = 0; i < 12; i++) {
+      const mote = new THREE.Mesh(
+        this.flashCoreGeo,
+        new THREE.MeshBasicMaterial({ color: 0x9dffc4, transparent: true, depthWrite: false })
+      );
+      const angle = (i / 12) * Math.PI * 2;
+      motes.push({ mote, angle, out: radius * (0.2 + Math.random() * 0.5), up: 2.5 + Math.random() * 2 });
+      group.add(mote);
+    }
+
+    group.add(beam);
+    this.#add(group, 1.0, 1, 0, (p) => {
+      const fade = 1 - p;
+      for (const { ring, delay } of rings) {
+        const t = THREE.MathUtils.clamp((p - delay) / (1 - delay), 0, 1);
+        ring.scale.setScalar(Math.max(0.05, t));
+        ring.material.opacity = t <= 0 ? 0 : (1 - t) * 0.9;
+      }
+      beam.scale.set(1 + p * 0.4, 1 + p * 0.3, 1 + p * 0.4);
+      beam.material.opacity = fade * 0.32;
+      for (const m of motes) {
+        const r = m.out * (0.4 + p * 0.6);
+        m.mote.position.set(Math.sin(m.angle) * r, p * m.up, Math.cos(m.angle) * r);
+        m.mote.scale.setScalar(1 + p * 1.5);
+        m.mote.material.opacity = fade;
+      }
+    });
+  }
+
   swingArc(position, yaw, radius, arc) {
     const mesh = new THREE.Mesh(
       new THREE.RingGeometry(radius * 0.72, radius, 28, 1, Math.PI / 2 - arc / 2, arc),

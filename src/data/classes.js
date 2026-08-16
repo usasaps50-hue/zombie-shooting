@@ -23,7 +23,7 @@ export function classEffects(level) {
 // 買うときの値段。0 なら最初から持っている
 export const JOB_PRICE = { soldier: 0, medic: 100, criminal: 400, architect: 500, necromancer: 600 };
 export const ITEM_PRICE = {
-  shovel: 0, pistol: 50, ak47: 300, megaphone: 200,
+  shovel: 0, pistol: 50, ak47: 300, megaphone: 200, team: 0,
   knife: 0, reborn: 0, death: 0, hammer: 0, bandage: 0,
 };
 

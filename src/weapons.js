@@ -79,6 +79,11 @@ export class Weapons {
       if (this.onEvent({ type: 'cast', item }) === false) return;
       st.readyAt = this.time + item.cooldown;
       this.#play('cast', item.swingTime);
+    } else if (item.kind === 'summon') {
+      // チームロッド。呼べる味方がいなければ、待ち時間を入れない
+      if (this.onEvent({ type: 'summon', item }) === false) return;
+      st.readyAt = this.time + item.cooldown;
+      this.#play('rally', item.swingTime);
     } else if (item.kind === 'buff') {
       // 拡声器。効果がかからなかったときは、待ち時間を入れない
       if (this.onEvent({ type: 'buff', item }) === false) return;

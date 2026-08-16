@@ -11,13 +11,12 @@ const r2 = (n) => Math.round(n * 100) / 100;
 
 // ネクロマンサーの味方。リボーンロッドで倒した敵が生き返ったものと、
 // 必殺技で呼び出す真っ黒な影の2種類がある。どちらも動きは同じで、
-// ふだんは主人についてまわり、近くに敵がいたら倒しに行って戻ってくる。
+// 近くに敵がいれば倒しに行き、いなければその場で待つ。
+// 主人のところへ集めたいときは、チームロッドで呼ぶ。
 
 const RADIUS = 0.42;
-// 主人のまわりを、これくらい離れてついてくる
+// チームロッドで呼ばれたとき、これくらいまで近づいたら「着いた」ことにする
 const FOLLOW_RADIUS = 3.2;
-// これより離れたら走って追いつく
-const CATCH_UP = 6.0;
 const TURN_SPEED = 8;
 
 export const MINION = {
@@ -56,6 +55,8 @@ export class Minion {
     this.target = null;
     // 主人のまわりのどこに立つか。ぶつからないよう1体ずつずらす
     this.slot = Math.random() * Math.PI * 2;
+    // チームロッドで呼ばれた集合場所。着いたら消える
+    this.gatherTo = null;
 
     this.root = new THREE.Group();
     this.zombie = new Zombie(black ? 'shadow' : skin, black ? null : armor, { outfit });
@@ -117,6 +118,23 @@ export class Minion {
     this.riseT = 0;
     this.zombie.setMode('emerge');
     return this;
+  }
+
+  // チームロッドで呼ばれた。敵より優先して、この場所へ向かう
+  callTo(position) {
+    if (!this.alive) return false;
+    this.gatherTo = position.clone();
+    this.target = null;
+    return true;
+  }
+
+  // 回復させる（チームロッドのおまけ）
+  healBy(ratio) {
+    if (!this.alive || ratio <= 0) return 0;
+    const before = this.hp;
+    this.hp = Math.min(this.maxHp, this.hp + this.maxHp * ratio);
+    this.#refresh();
+    return this.hp - before;
   }
 
   #refresh() {
@@ -241,7 +259,7 @@ export class Minion {
     this.#spin(dt);
   }
 
-  update(dt, now, { owner, enemies = [], colliders = [], structures = [], onAttack = () => {} }) {
+  update(dt, now, { enemies = [], colliders = [], structures = [], onAttack = () => {} }) {
     const p = this.root.position;
 
     // 呼び出された直後。地面から立ち上がるまでは動かない
@@ -285,7 +303,20 @@ export class Minion {
       }
     }
 
-    // 敵を探す。見つからなければ主人のところへ戻る
+    // 呼ばれているときは、まずそこへ向かう
+    if (this.gatherTo) {
+      this.state = 'gather';
+      const dist = this.#moveTo(this.gatherTo, dt, colliders, structures, true);
+      // 着いたら解散して、いつもどおり近くの敵を探す
+      if (dist <= FOLLOW_RADIUS) this.gatherTo = null;
+      this.zombie.setMode(dist > 0.6 ? 'walk' : 'idle');
+      this.root.rotation.y = this.facing + Math.PI;
+      this.zombie.update(dt);
+      this.#spin(dt);
+      return;
+    }
+
+    // 敵を探す。見つからなければ、その場で待つ
     if (!this.target || !this.target.active || !this.target.alive || this.target.invulnerable
       || this.target.position.distanceTo(p) > MINION.sight * 1.4) {
       this.target = this.#findEnemy(enemies, p);
@@ -305,19 +336,10 @@ export class Minion {
       } else {
         this.zombie.setMode('walk');
       }
-    } else if (owner) {
-      // 主人のまわりの決まった場所へ。近づいたら止まる
-      this.state = 'follow';
-      this.slot += dt * 0.35;
-      tmp.set(
-        owner.x + Math.sin(this.slot) * FOLLOW_RADIUS,
-        owner.y,
-        owner.z + Math.cos(this.slot) * FOLLOW_RADIUS
-      );
-      const away = p.distanceTo(owner);
-      const dist = this.#moveTo(tmp, dt, colliders, structures, away > CATCH_UP);
-      this.zombie.setMode(dist > 0.6 ? 'walk' : 'idle');
     } else {
+      // 敵がいなければ、その場で待つ。
+      // 主人のところへ集めたいときはチームロッドで呼ぶ
+      this.state = 'wait';
       this.zombie.setMode('idle');
     }
 
@@ -370,18 +392,32 @@ export class Minions {
     return minion;
   }
 
-  // ownerOf(ownerId) は、その持ち主の足元を返す関数。
-  // オンラインでは他の人の味方も動かすので、持ち主ごとに聞く
+  // 味方は持ち主について回らない。自分で動いて、
+  // チームロッドで呼ばれたときだけ集まってくる
   update(dt, now, world) {
-    const { ownerOf, ...rest } = world;
     for (let i = this.list.length - 1; i >= 0; i--) {
       const minion = this.list[i];
-      minion.update(dt, now, { ...rest, owner: ownerOf ? ownerOf(minion.ownerId) : world.owner });
+      minion.update(dt, now, world);
       if (minion.finished) {
         minion.dispose();
         this.list.splice(i, 1);
       }
     }
+  }
+
+  // チームロッドで呼ぶ。持ち主が同じで、届く距離にいる味方だけ集まる
+  callTo(ownerId, position, range, heal = 0) {
+    let called = 0;
+    let healed = 0;
+    for (const minion of this.list) {
+      if (!minion.alive) continue;
+      if (minion.ownerId && minion.ownerId !== ownerId) continue;
+      if (minion.position.distanceTo(position) > range) continue;
+      if (!minion.callTo(position)) continue;
+      healed += minion.healBy(heal);
+      called++;
+    }
+    return { called, healed };
   }
 
   // 親が送る一覧

@@ -127,6 +127,8 @@ export class Shop {
                 ? `Lv${levelOf(id)}　相手のHPの${Math.round((upgradedItem(id, levelOf(id)).hpPercent ?? 0) * 100)}%＋${upgradedItem(id, levelOf(id)).damage} ／ ${upgradedItem(id, levelOf(id)).cooldown}秒に1回`
               : item.kind === 'magic'
                 ? `Lv${levelOf(id)}　${upgradedItem(id, levelOf(id)).damage}ダメージ ／ 半径${upgradedItem(id, levelOf(id)).blast}m ／ ${upgradedItem(id, levelOf(id)).cooldown}秒に1回${upgradedItem(id, levelOf(id)).reviveChance ? ` ／ 味方化${Math.round(upgradedItem(id, levelOf(id)).reviveChance * 100)}%` : ''}`
+              : item.kind === 'summon'
+                ? `Lv${levelOf(id)}　${upgradedItem(id, levelOf(id)).range >= 999 ? 'マップ全体' : `${upgradedItem(id, levelOf(id)).range}m以内`}の味方を呼ぶ ／ ${upgradedItem(id, levelOf(id)).cooldown}秒に1回`
               : item.kind === 'buff'
                 ? `Lv${levelOf(id)}　${buffText(buffOf(upgradedItem(id, levelOf(id)))) || '効果なし'}を${item.buffTime}秒 ／ ${item.cooldown}秒に1回`
                 : `Lv${levelOf(id)}　火力 ${item.damage} ／ ${item.cooldown}秒に1回`;
@@ -223,7 +225,9 @@ export class Shop {
       const level = levelOf(id);
       const status = upgradeStatus(id);
       const item = upgradedItem(id, level);
-      const power = item.kind === 'buff'
+      const power = item.kind === 'summon'
+        ? `${item.range >= 999 ? 'マップ全体' : `${item.range}m`}／${item.cooldown}秒${item.heal ? `／回復${Math.round(item.heal * 100)}%` : ''}`
+        : item.kind === 'buff'
         ? buffText(buffOf(item))
         : item.id === 'knife'
           ? `相手のHPの${Math.round((item.hpPercent ?? 0) * 100)}%＋${item.damage}`

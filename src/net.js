@@ -16,7 +16,8 @@ function makeId() {
 }
 
 // 送受信するイベントの名前。増やすときはここに足す
-const EVENTS = ['p', 'w', 'hit', 'kill', 'build', 'dmg', 'revive', 'ult', 'eshot', 'fx'];
+const EVENTS = ['p', 'w', 'hit', 'kill', 'build', 'dmg', 'revive', 'ult', 'eshot', 'fx',
+  'buff', 'mini', 'shadow', 'gather'];
 
 export class Net {
   constructor() {

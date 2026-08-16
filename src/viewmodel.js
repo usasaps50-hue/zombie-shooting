@@ -152,6 +152,34 @@ export function createItemMesh(id, gold = false, silencer = false) {
       core.scale.setScalar(0.45);
       halo.scale.setScalar(0.8);
     }
+  } else if (id === 'team') {
+    // 旗の付いた杖。振って味方を呼び集める
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.03, 0.95, 8), mat(0x5b4630, 0.9));
+    shaft.position.set(0, 0.02, 0);
+    // 旗ざお。上に伸ばして布を張る
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.3, 6), mat(0x9aa2ab, 0.4));
+    pole.position.set(0, 0.6, 0);
+    // 布。まっすぐ垂らすと板に見えるので、少しひねる
+    const cloth = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.012), mat(0x3f8f5c, 0.85));
+    cloth.position.set(0.18, 0.55, 0.01);
+    cloth.rotation.y = 0.25;
+    const clothTip = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.17, 0.012), mat(0x347a4d, 0.85));
+    clothTip.position.set(0.4, 0.55, 0.05);
+    clothTip.rotation.y = 0.5;
+    // 布に入った印
+    const mark = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.006), mat(0xdff3e6, 0.7));
+    mark.position.set(0.17, 0.55, 0.02);
+    mark.rotation.y = 0.25;
+    // 杖の頭の緑の玉。呼びかけの光
+    const orb = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.05, 0),
+      new THREE.MeshBasicMaterial({ color: 0x6bff9a })
+    );
+    orb.position.set(0, 0.76, 0);
+    orb.name = 'lamp';
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.06, 8), mat(0x9aa2ab, 0.45));
+    collar.position.set(0, 0.44, 0);
+    g.add(shaft, pole, cloth, clothTip, mark, orb, collar);
   } else if (id === 'megaphone') {
     // ラッパ型の拡声器。太い側が前（-Z）を向く
     const horn = new THREE.Mesh(
@@ -236,16 +264,20 @@ export class ViewModel {
     const m = this.current;
     const sway = moveAmount * 0.02;
 
+    const flagged = this.itemId === 'team';
     const longHandled = this.itemId === 'shovel' || this.itemId === 'hammer'
-      || this.itemId === 'reborn' || this.itemId === 'death';
-    const base = longHandled
-      ? { pos: new THREE.Vector3(0.45, -0.5, -0.8), rot: new THREE.Euler(2.7, -0.3, 0.7) }
-      : { pos: new THREE.Vector3(0.3, -0.26, -0.7), rot: new THREE.Euler(0.02, -0.28, 0.05) };
+      || this.itemId === 'reborn' || this.itemId === 'death' || flagged;
+    // チームロッドは旗が見どころなので、立てて持って旗を画面に入れる
+    const base = flagged
+      ? { pos: new THREE.Vector3(0.52, -0.5, -0.85), rot: new THREE.Euler(0.24, -0.5, 0.46) }
+      : longHandled
+        ? { pos: new THREE.Vector3(0.45, -0.5, -0.8), rot: new THREE.Euler(2.7, -0.3, 0.7) }
+        : { pos: new THREE.Vector3(0.3, -0.26, -0.7), rot: new THREE.Euler(0.02, -0.28, 0.05) };
 
     // 縦画面は水平画角が狭いので、武器を内側・下・小さめに寄せて画面内に収める
     const narrow = THREE.MathUtils.clamp(this.camera.aspect / 1.6, 0.45, 1);
     base.pos.x *= narrow;
-    m.scale.setScalar((longHandled ? 0.5 : 1) * (0.6 + narrow * 0.4));
+    m.scale.setScalar((flagged ? 0.34 : longHandled ? 0.5 : 1) * (0.6 + narrow * 0.4));
 
     // 構えているときは、銃を画面の真ん中へ寄せて構え直す
     if (this.aim && !longHandled) {
@@ -306,6 +338,21 @@ export class ViewModel {
       for (const o of m.children) {
         if (o.name === 'lamp') o.scale.setScalar(glow);
       }
+    } else if (name === 'rally') {
+      // チームロッド：旗を高く掲げて、左右に大きく振る
+      const raise = smooth(phase(t, 0, 0.3));
+      const back = smooth(phase(t, 0.78, 1));
+      const up = raise - back;
+      // 振っているあいだだけ、はっきり左右に往復させる
+      const wave = Math.sin(phase(t, 0.3, 0.8) * Math.PI * 2) * up;
+      m.position.y += up * 0.5;
+      m.position.z += up * 0.16;
+      m.position.x += wave * 0.16 - up * 0.06;
+      m.rotation.x += -up * 1.0;
+      m.rotation.z += wave * 0.5;
+      m.rotation.y += wave * 0.35;
+      const lamp = m.getObjectByName('lamp');
+      if (lamp) lamp.scale.setScalar(1 + up * 1.8 + Math.abs(wave) * 0.6);
     } else if (name === 'shout') {
       // 拡声器：口元へ持ち上げて、声に合わせて小刻みに震わせる
       const raise = smooth(phase(t, 0, 0.25)) - smooth(phase(t, 0.7, 1));

@@ -9,6 +9,7 @@ const POSE = {
   hammer: [0.1, 0.5, 0.7],
   bandage: [0.5, 0.4, 0],
   megaphone: [0.18, -Math.PI / 2 - 0.5, 0],
+  team: [0.1, 0.5, 0.6],
   knife: [0.15, -Math.PI / 2 - 0.4, 0.5],
   reborn: [0.1, 0.4, 0.6],
   death: [0.1, 0.4, 0.6],

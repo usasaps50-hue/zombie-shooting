@@ -96,6 +96,23 @@ export const UPGRADES = {
       },
     ],
   },
+  team: {
+    id: 'team',
+    levels: [
+      { desc: '30m以内の味方を呼び集める／20秒に1回' },
+      { cost: 200, range: 40, cooldown: 16, desc: '40m以内／16秒に1回' },
+      { cost: 400, range: 50, cooldown: 13, heal: 0.2, desc: '50m以内／13秒に1回／集まった味方をHP20%回復' },
+      { cost: 700, range: 70, cooldown: 10, heal: 0.35, desc: '70m以内／10秒に1回／35%回復' },
+      {
+        cost: 1000,
+        gold: true,
+        range: 9999,
+        cooldown: 8,
+        heal: 0.5,
+        desc: '見た目が金色／マップ全体から呼べる／8秒に1回／50%回復',
+      },
+    ],
+  },
   megaphone: {
     id: 'megaphone',
     levels: [
@@ -190,6 +207,9 @@ export function upgradedItem(itemId, level) {
   if (bonus.fireInterval) item.fireInterval = bonus.fireInterval;
   if (bonus.reloadTime) item.reloadTime = bonus.reloadTime;
   if (bonus.rangeBonus && base.range) item.range = base.range * (1 + bonus.rangeBonus);
+  // チームロッド用。呼びかけの届く距離と、集まった味方を回復する割合
+  if (bonus.range) item.range = bonus.range;
+  if (bonus.heal) item.heal = bonus.heal;
   // ナイフ用。振る間隔・相手のHPを削る割合・溜まる血の量
   if (bonus.cooldown) item.cooldown = bonus.cooldown;
   if (bonus.hpPercent) item.hpPercent = bonus.hpPercent;
