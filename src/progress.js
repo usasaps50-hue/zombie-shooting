@@ -48,41 +48,67 @@ function normalize(saved) {
 export const progress = empty();
 // ログインするまでは保存先が決まらないので、その間は保存しない
 let saveKey = null;
+// いま入っているアカウント（Supabase のときは cloud: true）
+let account = null;
+// Supabase に送る役。cloud.js が入れてくれる（設定がなければ何もしない）
+let remoteSaver = null;
+
+export function setRemoteSaver(fn) {
+  remoteSaver = fn;
+}
 
 // ログインした人の保存データに切り替える。
-// takeOldSave は「アカウントより前の保存データを引き継ぐか」（一番はじめの人だけ）
-export function useAccount(account, takeOldSave = false) {
-  saveKey = `${KEY}:${account.id}`;
-  let saved = readSave(saveKey);
-  if (!saved && takeOldSave) {
-    saved = readSave(KEY);
-    if (saved) {
-      // 引き継いだあと、元のデータは消さずに名前を変えて残しておく
-      try {
-        localStorage.setItem(OLD_BACKUP_KEY, JSON.stringify(saved));
-        localStorage.removeItem(KEY);
-      } catch { /* 動かせなくても、引き継ぎ自体はできている */ }
-    }
-  }
+//  - cloudData … Supabase から読んだ進み具合（無ければ null）
+//  - takeOldSave … アカウントより前の保存データを引き継ぐか（一番はじめの人だけ）
+export function useAccount(nextAccount, { cloudData = null, takeOldSave = false } = {}) {
+  account = nextAccount;
+  saveKey = `${KEY}:${nextAccount.id}`;
+  // Supabase にあるものが本物。無いときだけ、この端末に残っているものを見る
+  let saved = cloudData ?? readSave(saveKey);
+  if (!saved && takeOldSave) saved = consumeOldSave();
   Object.assign(progress, normalize(saved));
   // なまえはアカウントのものにそろえる
-  progress.name = account.name;
+  progress.name = nextAccount.name;
   save();
 }
 
 // ログアウト。保存先を外して、中身を空に戻す
 export function clearAccount() {
   saveKey = null;
+  account = null;
   Object.assign(progress, empty());
+}
+
+// この端末に残っている、そのアカウントの控え（引き継ぎに使う）
+export function savedProgressOf(accountId) {
+  return readSave(`${KEY}:${accountId}`);
+}
+
+// アカウントの仕組みを入れる前の保存データを、1回だけ取り出す。
+// 取ったあとは名前を変えて残すので、2人目には渡らない（コインの増殖よけ）
+export function consumeOldSave() {
+  const saved = readSave(KEY);
+  if (!saved) return null;
+  try {
+    localStorage.setItem(OLD_BACKUP_KEY, JSON.stringify(saved));
+    localStorage.removeItem(KEY);
+  } catch { /* 動かせなくても、引き継ぎ自体はできている */ }
+  return saved;
+}
+
+export function currentAccount() {
+  return account;
 }
 
 export function save() {
   if (!saveKey) return;
   try {
+    // 端末にも控えを置いておく。つながらないときに前回の続きから遊べる
     localStorage.setItem(saveKey, JSON.stringify(progress));
   } catch {
     /* 保存できない環境ではその場かぎりの進行になる */
   }
+  remoteSaver?.(account, progress);
 }
 
 // オンラインで他の人に見えるなまえ。ログインしたアカウントのなまえを使う
