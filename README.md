@@ -2,6 +2,16 @@
 
 Three.js製のブラウザ3Dゲーム。ビルド不要の静的サイト（CDNのimportmapでThree.jsを読み込み）。
 
+## 遊ぶ（公開ページ）
+
+**<https://usasaps50-hue.github.io/zombie-shooting/>**
+
+GitHub Pages で公開してあるので、スマホでもPCでも、どこからでも開ける。`main` に push すると自動で反映される。
+
+- HTTPS なので、視点操作（Pointer Lock）・全画面・音・オンライン通信がすべて使える
+- スマホは Safari で開いて「ホーム画面に追加」（→「スマホのホーム画面に追加する」）
+- 一緒に遊ぶ人にも、このURLを教えるだけでよい
+
 ## 遊び方（ローカル）
 
 ```bash
@@ -36,14 +46,16 @@ iPhone の Safari で開いて、共有ボタン → **「ホーム画面に追�
 - Android の Chrome 用に `manifest.webmanifest`（192px・512px、全画面・横向き固定）も置いてある
 - ブラウザのタブ用に `icon/favicon-32.png`
 
-スマホから開くには、ゲームが同じ Wi-Fi から見える必要がある。デスクトップのアプリを起動しておけば、Mac の IP アドレスでつながる:
+スマホでは、**公開ページ <https://usasaps50-hue.github.io/zombie-shooting/> をそのまま開けばよい**（同じWi-Fiにいる必要もない）。
+
+手元で直したものを試したいときだけ、Mac の IP でつなぐ:
 
 ```bash
 # Mac の IP を調べる
 ipconfig getifaddr en0
 ```
 
-スマホの Safari で `http://<いま出たIP>:8765/index.html` を開く。
+スマホの Safari で `http://<いま出たIP>:8765/index.html` を開く（同じWi-Fiにいるとき）。
 
 ## 操作
 
@@ -141,6 +153,7 @@ export const SUPABASE_KEY = 'sb_publishable_なんとか';
 
 ### 3. 遊ぶ
 
+0. 一緒に遊ぶ人に <https://usasaps50-hue.github.io/zombie-shooting/> を開いてもらう
 1. 待機場の奥の **バトルゲート** で、**なまえ** と **合言葉** を入れて出発する
 2. 一緒に遊ぶ人にも、**同じ合言葉**を入れてもらう
 3. つながると、画面の右上に部屋の人数と名前が出ます（👑 が付いている人が「親」）
