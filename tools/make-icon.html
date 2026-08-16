@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>icon</title>
+<style>html,body{margin:0;background:#20242b;color:#ddd;font:13px monospace}canvas{image-rendering:auto;margin:10px;background:#2a2f38}</style>
+</head><body>
+<div id="log"></div>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.180.0/build/three.module.js",
+  "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+const { Zombie } = await import('./src/zombie.js');
+
+const say = (m) => { document.getElementById('log').innerHTML += m + '<br>'; };
+
+// 通常ゾンビ（緑）をそのまま作って、顔だけを大きく写す
+const SIZE = 1024;
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setSize(SIZE, SIZE);
+renderer.setPixelRatio(1);
+renderer.setClearColor(0x000000, 0);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+
+const scene = new THREE.Scene();
+// ゲーム中の見た目を保ちたいので、明るくしすぎない
+scene.add(new THREE.HemisphereLight(0xcddbea, 0x3f4750, 1.5));
+const key = new THREE.DirectionalLight(0xfff2dd, 1.7);
+key.position.set(2.5, 3, 5);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9fc4ff, 0.6);
+fill.position.set(-3, 0.5, 3);
+scene.add(fill);
+
+const zombie = new Zombie('green');
+zombie.setMode('idle');
+zombie.update(0.016);
+
+// 頭だけを取り出す。胴体や墓が写り込まないようにする
+zombie.neck.position.set(0, 0, 0);
+zombie.neck.rotation.set(0, 0, 0);
+scene.add(zombie.neck);
+zombie.neck.updateWorldMatrix(true, true);
+
+// 頭の実際の大きさを測って、そこに合わせて引く
+const bounds = new THREE.Box3().setFromObject(zombie.neck);
+const head = bounds.getCenter(new THREE.Vector3());
+const span = bounds.getSize(new THREE.Vector3());
+
+const q = new URLSearchParams(location.search);
+const FOV = Number(q.get('fov') ?? 30);
+// 顔が画面のどれくらいを占めるか。小さくするほど余白が増える
+const FILL = Number(q.get('fill') ?? 0.78);
+const TILT = Number(q.get('tilt') ?? 0.06);
+
+const camera = new THREE.PerspectiveCamera(FOV, 1, 0.01, 50);
+const fit = (Math.max(span.x, span.y) / FILL) / (2 * Math.tan((FOV * Math.PI / 180) / 2));
+// ほんの少しだけ斜めから見て、平面に見えないようにする
+camera.position.set(head.x + fit * TILT, head.y + fit * TILT * 0.5, head.z + fit);
+camera.lookAt(head);
+camera.updateProjectionMatrix();
+renderer.render(scene, camera);
+say(`頭 ${span.x.toFixed(2)}x${span.y.toFixed(2)}　fov${FOV} fill${FILL} 距離${fit.toFixed(2)}`);
+
+document.body.appendChild(renderer.domElement);
+say(`顔の中心: (${head.x.toFixed(2)}, ${head.y.toFixed(2)}, ${head.z.toFixed(2)})`);
+
+// PNG にして、サーバーへ保存してもらう
+renderer.domElement.toBlob(async (blob) => {
+  const res = await fetch('/' + (q.get('name') ?? 'zombie-face') + '.png', { method: 'POST', body: blob });
+  say(`保存: ${res.ok ? 'できた' : 'しっぱい'}　${(blob.size / 1024).toFixed(0)} KB`);
+  document.title = 'icon-saved';
+}, 'image/png');
+</script>
+</body></html>
