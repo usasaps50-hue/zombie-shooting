@@ -9,24 +9,60 @@ export const WAVE = {
   clearCoins: 10,
 };
 
-// 10ウェーブごとにボスが出る
-export const BOSS_EVERY = 10;
-export const BOSS_ID = 'titan';
+// ボスは確率で出る。ただし「運が悪いと永久に出ない」と困るので、
+// 出ないウェーブが続くほど確率が上がり、いずれ必ず出るようにしてある
+export const BOSS = {
+  // これより前のウェーブには出ない
+  fromWave: 8,
+  // 前のボスから、最低これだけウェーブを空ける
+  minGap: 4,
+  // 条件を満たしたウェーブでの、はじめの確率
+  baseChance: 0.18,
+  // 出なかったウェーブが1つ増えるごとに、これだけ確率が上がる
+  ramp: 0.12,
+  // 前のボスからこれだけ空いたら、必ず出る
+  guaranteeGap: 14,
+};
 
-export function isBossWave(wave) {
-  return wave > 0 && wave % BOSS_EVERY === 0;
+// 出てくるボスの一覧。from はそのボスが出はじめるウェーブ
+export const BOSS_TABLE = [
+  { id: 'titan', from: 8, rarity: 1.0 },
+  { id: 'mother', from: 12, rarity: 1.0 },
+];
+
+// このウェーブにボスが出るか。since は前にボスが出てから何ウェーブ経ったか
+export function rollBoss(wave, since) {
+  if (wave < BOSS.fromWave) return false;
+  if (since < BOSS.minGap) return false;
+  if (since >= BOSS.guaranteeGap) return true;
+  // minGap を超えたぶんだけ確率が上がっていく
+  const chance = BOSS.baseChance + BOSS.ramp * (since - BOSS.minGap);
+  return Math.random() < Math.min(1, chance);
+}
+
+// 出るボスを1体えらぶ
+export function pickBoss(wave) {
+  const usable = BOSS_TABLE.filter((b) => wave >= b.from);
+  if (!usable.length) return null;
+  const total = usable.reduce((a, b) => a + b.rarity, 0);
+  let roll = Math.random() * total;
+  for (const b of usable) {
+    roll -= b.rarity;
+    if (roll <= 0) return b.id;
+  }
+  return usable[usable.length - 1].id;
 }
 
 // 1ウェーブ5体から、1ウェーブごとに5体ずつ増える。
 // ボスの回は、ボス1体＋おともだけにして数を絞る
-export function waveCount(wave) {
-  if (isBossWave(wave)) return 1 + 12;
+export function waveCount(wave, boss = false) {
+  if (boss) return 1 + 12;
   return 5 * wave;
 }
 
 // ボスのHPもウェーブに合わせて増やす。ただし雑魚ほどは伸ばさない
 export function bossHpScale(wave) {
-  return 1 + 0.35 * (Math.floor(wave / BOSS_EVERY) - 1);
+  return 1 + 0.35 * Math.max(0, Math.floor((wave - BOSS.fromWave) / 6));
 }
 
 // 5ウェーブごとに、ゾンビのHPが元の50%ずつ増える

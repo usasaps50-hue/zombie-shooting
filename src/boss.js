@@ -65,6 +65,29 @@ export const TITAN = {
   rageSpeedScale: 1.25,
 };
 
+// ボス「マザー」。ほとんど動かない代わりに、4本の腕がゾンビを産み続ける。
+// 腕を全部落とさないと本体にダメージが通らない。
+export const MOTHER = {
+  // 腕1本ぶんのHP
+  armHp: 600,
+  // 腕が残っている間、本体に通るダメージの割合（＝ほとんど通らない）
+  bodyGuard: 0.08,
+  // 何秒ごとにゾンビを産むか。腕を1本落とすごとに、この秒数が増える
+  birthInterval: 8,
+  birthSlower: 3,
+  // 1回に産む数
+  birthCount: 2,
+  // 落とした腕は、この秒数で1本だけ生え直す
+  regrowTime: 90,
+  // 腕の届く範囲。近づきすぎると薙ぎ払われる
+  swipeDamage: 28,
+  swipeRadius: 7.5,
+  swipeReach: 8.5,
+  swipeCooldown: 2.6,
+  // HPがこの割合を下回ると、産む間隔が半分になって暴れる
+  ragePoint: 0.4,
+};
+
 const tmp = new THREE.Vector3();
 const tmp2 = new THREE.Vector3();
 
@@ -450,5 +473,200 @@ export class Shockwave {
         this.onHit(t, this.damage);
       }
     }
+  }
+}
+
+
+// ボス「マザー」の頭の中。
+// その場から動かず、腕でゾンビを産み、近づいた相手を薙ぎ払う。
+export class MotherBrain {
+  constructor(enemy) {
+    this.enemy = enemy;
+    this.reset();
+  }
+
+  get mother() {
+    return this.enemy.zombie;
+  }
+
+  reset() {
+    this.phase = 1;
+    this.armHp = [MOTHER.armHp, MOTHER.armHp, MOTHER.armHp, MOTHER.armHp];
+    this.nextBirthAt = 4;
+    this.nextSwipeAt = 0;
+    this.regrowAt = 0;
+    this.birthing = false;
+    this.birthed = false;
+    this.attacking = false;
+    this.landed = false;
+    this.roaring = false;
+    this.roarThen = null;
+  }
+
+  get invulnerable() {
+    return this.roaring;
+  }
+
+  get armsLeft() {
+    return this.armHp.filter((hp) => hp > 0).length;
+  }
+
+  // 腕が残っている間は本体を守っている。表示にも使う
+  get guarded() {
+    return this.armsLeft > 0;
+  }
+
+  // いまの産む間隔。腕を落とすほど遅くなり、暴れると速くなる
+  get birthInterval() {
+    const slowed = MOTHER.birthInterval + MOTHER.birthSlower * (4 - this.armsLeft);
+    return this.phase === 2 ? slowed * 0.55 : slowed;
+  }
+
+  hit(damage, now, part = null) {
+    if (!this.enemy.alive || this.invulnerable) return false;
+
+    // 腕を撃った
+    if (typeof part === 'number') {
+      if (this.armHp[part] <= 0) return false;
+      this.armHp[part] = Math.max(0, this.armHp[part] - damage);
+      if (this.armHp[part] === 0) {
+        this.mother.breakArm(part);
+        this.onArmBroken?.(this.enemy, part, this.armsLeft);
+        // 落とした腕は、しばらくすると1本だけ生え直す
+        if (!this.regrowAt) this.regrowAt = now + MOTHER.regrowTime;
+        if (this.armsLeft === 0) this.#startRoar(() => this.onPhase?.(this.enemy, 'open'));
+      }
+      return true;
+    }
+
+    // 本体。腕が残っている間はほとんど通らない
+    const amount = this.guarded
+      ? Math.max(1, Math.round(damage * MOTHER.bodyGuard))
+      : damage;
+    this.enemy.hp = Math.max(0, this.enemy.hp - amount);
+    this.enemy.refreshLabel?.();
+    if (this.enemy.hp <= 0) {
+      this.mother.setMode('death');
+      this.enemy.state = 'dead';
+      this.enemy.label.sprite.visible = false;
+      return true;
+    }
+    if (!this.attacking && !this.birthing) this.mother.setMode('hit');
+
+    // HPが減ると、産む間隔が半分になる
+    if (this.phase === 1 && this.enemy.hp <= this.enemy.maxHp * MOTHER.ragePoint) {
+      this.#startRoar(() => {
+        this.phase = 2;
+        this.onPhase?.(this.enemy, 'rage');
+      });
+    }
+    return true;
+  }
+
+  #startRoar(then) {
+    this.roaring = true;
+    this.roarThen = then;
+    this.attacking = false;
+    this.birthing = false;
+    this.mother.setMode('roar');
+    this.onRoar?.(this.enemy);
+  }
+
+  update(dt, now, world) {
+    const { target, onBirth = () => {}, onSwipe = () => {} } = world;
+    const mother = this.mother;
+
+    if (!this.enemy.alive) {
+      mother.update(dt);
+      if (mother.deathFinished) this.enemy.retire();
+      return;
+    }
+
+    if (this.roaring) {
+      if (mother.roarFinished) {
+        this.roaring = false;
+        const then = this.roarThen;
+        this.roarThen = null;
+        mother.setMode('idle');
+        then?.();
+      }
+      mother.update(dt);
+      return;
+    }
+
+    // 落とした腕が生え直る
+    if (this.regrowAt && now >= this.regrowAt) {
+      this.regrowAt = 0;
+      const index = this.armHp.findIndex((hp) => hp <= 0);
+      if (index >= 0) {
+        this.armHp[index] = MOTHER.armHp;
+        mother.regrowArm(index);
+        this.onArmRegrown?.(this.enemy, index, this.armsLeft);
+      }
+    }
+
+    // 産んでいる最中
+    if (this.birthing) {
+      if (!this.birthed && mother.birthOpened) {
+        this.birthed = true;
+        onBirth(this.enemy, MOTHER.birthCount);
+      }
+      if (mother.birthFinished) {
+        this.birthing = false;
+        mother.setMode('idle');
+      }
+      mother.update(dt);
+      return;
+    }
+
+    // 薙ぎ払いの最中
+    if (this.attacking) {
+      if (!this.landed && mother.attackLanded) {
+        this.landed = true;
+        onSwipe(this.enemy, MOTHER.swipeDamage, MOTHER.swipeRadius);
+      }
+      if (mother.attackFinished) {
+        this.attacking = false;
+        this.nextSwipeAt = now + MOTHER.swipeCooldown;
+        mother.setMode('idle');
+      }
+      mother.update(dt);
+      return;
+    }
+
+    // 腕が残っていればゾンビを産む
+    if (this.armsLeft > 0 && now >= this.nextBirthAt) {
+      this.nextBirthAt = now + this.birthInterval;
+      this.birthing = true;
+      this.birthed = false;
+      mother.setMode('birth');
+      this.onBirthStart?.(this.enemy);
+      mother.update(dt);
+      return;
+    }
+
+    // 近づいた相手は腕で薙ぎ払う。動かないので、それ以外は待つだけ
+    if (target) {
+      tmp.copy(target.position).sub(this.enemy.root.position).setY(0);
+      const dist = tmp.length();
+      this.#face(Math.atan2(-tmp.x, -tmp.z), dt);
+      if (dist <= MOTHER.swipeReach && this.armsLeft > 0 && now >= this.nextSwipeAt) {
+        this.attacking = true;
+        this.landed = false;
+        mother.restartAttack();
+        mother.update(dt);
+        return;
+      }
+    }
+    mother.setMode('idle');
+    mother.update(dt);
+  }
+
+  #face(yaw, dt) {
+    let delta = ((yaw - this.enemy.facing + Math.PI) % (Math.PI * 2)) - Math.PI;
+    if (delta < -Math.PI) delta += Math.PI * 2;
+    // 根を張っているので、向き直るのも遅い
+    this.enemy.facing += THREE.MathUtils.clamp(delta, -0.9 * dt, 0.9 * dt);
+    this.enemy.root.rotation.y = this.enemy.facing + Math.PI;
   }
 }

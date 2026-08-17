@@ -35,7 +35,7 @@ import { ARMOR_GUN_REDUCTION } from './data/classes.js';
 import { IS_TOUCH, QUALITY } from './device.js';
 import { sfx } from './audio.js';
 import { Minions, MINION } from './minion.js';
-import { Shockwave, TITAN } from './boss.js';
+import { Shockwave, TITAN, MOTHER } from './boss.js';
 import { Chat, cleanText } from './chat.js';
 
 const canvas = document.getElementById('game');
@@ -476,6 +476,8 @@ function castRod(item) {
 
 // リボーンロッドで倒した敵を、確率で味方として起こす
 function tryRevive(def, position, item, ownerId = net.id) {
+  // ボスは味方にできない（見た目も強さも味方の仕組みに乗らない）
+  if (def.boss) return false;
   if (Math.random() >= (item.reviveChance ?? 0)) return false;
   minions.add({
     defId: def.id,
@@ -1460,8 +1462,10 @@ const tmpVec = new THREE.Vector3();
 function setupBoss(boss) {
   const brain = boss.boss;
   if (!brain) return;
-  hud.setToast(`⚠ ${boss.def.name} が現れた！　まずは光る装甲4枚をこわせ`, 4.5);
   sfx.playAt('roar', boss.position, { volume: 1.4 });
+  if (boss.def.bossKind === 'mother') return setupMother(boss, brain);
+
+  hud.setToast(`⚠ ${boss.def.name} が現れた！　まずは光る装甲4枚をこわせ`, 4.5);
 
   brain.onPlateBroken = (b, index, left) => {
     const at = b.zombie.plates[index].getWorldPosition(new THREE.Vector3());
@@ -1487,6 +1491,43 @@ function setupBoss(boss) {
     slam(b, damage, radius, performance.now() / 1000);
   };
   brain.onSummon = (b, count) => summonForBoss(count);
+}
+
+// マザー。腕を落とすまで本体に通らない
+function setupMother(boss, brain) {
+  hud.setToast(`⚠ ${boss.def.name} が現れた！　4本の腕を全部落とせ`, 4.5);
+  brain.onArmBroken = (b, index, left) => {
+    const at = b.zombie.armPoint(index, new THREE.Vector3());
+    effects.plateBreak(at);
+    sfx.playAt('plate', at, { volume: 1.0 });
+    hud.setToast(left > 0 ? `腕を落とした！ 残り${left}本` : '腕を全部落とした！ 本体を攻撃できる', 2.4);
+  };
+  brain.onArmRegrown = (b, index, left) => {
+    sfx.playAt('raise', b.position, { volume: 1.1 });
+    hud.setToast(`⚠ 腕が生えてきた！ 残り${left}本`, 2.4);
+  };
+  brain.onRoar = (b) => {
+    sfx.playAt('roar', b.position, { volume: 1.4 });
+    effects.shout(b.position.clone().setY(b.position.y + b.def.height * 0.8), 8);
+  };
+  brain.onPhase = (b, kind) => {
+    if (kind === 'rage') hud.setToast('⚠ マザーが暴れだした！ 産む間隔が速くなる', 3.4);
+  };
+  brain.onBirthStart = (b) => sfx.playAt('growl', b.position, { volume: 1.2 });
+}
+
+// マザーが産むゾンビ。卵嚢の前から出てくる
+function motherBirth(boss, count) {
+  const at = boss.zombie.birthPoint(new THREE.Vector3());
+  effects.dirtBurst(at.clone().setY(0), true);
+  sfx.playAt('dig', boss.position, { volume: 1.0 });
+  for (let i = 0; i < count; i++) {
+    const slot = enemies.find((e) => !e.active);
+    if (!slot) break;
+    const a = Math.random() * Math.PI * 2;
+    const spot = new THREE.Vector3(at.x + Math.sin(a) * 2.5, 0, at.z + Math.cos(a) * 2.5);
+    slot.spawnAs(pickType(waves.wave), spot, hpScale(waves.wave));
+  }
 }
 
 // ボスが呼ぶ雑魚。トンネルから湧かせる
@@ -1724,6 +1765,9 @@ function frame() {
       hud.setToast('タイタンが跳ぶ構え！ 印から離れろ', 2.0);
     },
     onShockwave: (boss, damage) => spawnShockwave(boss, damage),
+    // ---- マザーの攻撃 ----
+    onBirth: (boss, count) => motherBirth(boss, count),
+    onSwipe: (boss, damage, radius) => slam(boss, damage, radius, now),
     onBeam: (boss, damage) => titanBeam(boss, damage),
     onSummon: (boss, count) => summonForBoss(count),
     // 掴んだ雑魚を投げつける。投げられた側もダメージを受ける
@@ -2109,6 +2153,7 @@ addEventListener('resize', resize);
 // iOS は回転直後の innerWidth が古いままなので、少し待ってもう一度合わせる
 addEventListener('orientationchange', () => setTimeout(resize, 300));
 resize();
+
 
 
 

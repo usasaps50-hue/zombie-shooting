@@ -103,6 +103,18 @@ export class Hud {
     this.bossEl.classList.remove('hidden');
     this.bossName.textContent = boss.def.name;
     this.bossFill.style.width = `${Math.max(0, (boss.hp / boss.maxHp) * 100)}%`;
+
+    // マザーは腕、タイタンは装甲。どちらも「守りが残っている間は本体を削れない」
+    if (boss.def.bossKind === 'mother') {
+      const guarded = brain ? brain.guarded : false;
+      this.bossEl.classList.toggle('armored', guarded);
+      this.bossEl.classList.toggle('rage', brain?.phase === 2);
+      this.bossPhase.textContent = guarded
+        ? `腕 残り${brain.armsLeft}本（全部落とすまで本体に効かない）`
+        : '腕を全部落とした　いまが攻めどき';
+      return;
+    }
+
     // 装甲が残っている間は、本体をほとんど削れないと色で伝える
     const armored = brain ? brain.platesLeft > 0 : false;
     this.bossEl.classList.toggle('armored', armored);

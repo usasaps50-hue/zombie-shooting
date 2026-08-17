@@ -4,7 +4,8 @@ import { Zombie } from './zombie.js';
 import { Mutant } from './mutant.js';
 import { Skeleton } from './skeleton.js';
 import { Titan } from './titan.js';
-import { TitanBrain } from './boss.js';
+import { Mother } from './mother.js';
+import { TitanBrain, MotherBrain } from './boss.js';
 import { ENEMIES, JOBS, BUILD_LURE } from './data/jobs.js';
 import { floorHeight, STEP_HEIGHT, STEP_SLACK, EYE_HEIGHT } from './player.js';
 import { makeLabel, hpColor } from './label.js';
@@ -210,6 +211,8 @@ export class Enemy {
     }
     if (this.def.model === 'titan') {
       this.zombie = new Titan();
+    } else if (this.def.model === 'mother') {
+      this.zombie = new Mother();
     } else if (this.def.model === 'mutant') {
       this.zombie = new Mutant(this.def.armor);
     } else if (this.def.model === 'skeleton') {
@@ -236,9 +239,10 @@ export class Enemy {
       this.def = ENEMIES[typeId];
       this.#buildModel();
     }
-    // ボスは専用の頭を持つ。ふつうの敵に戻ったら外す
+    // ボスは種類ごとに専用の頭を持つ。ふつうの敵に戻ったら外す
     if (this.def.boss) {
-      this.boss ??= new TitanBrain(this);
+      const Brain = this.def.bossKind === 'mother' ? MotherBrain : TitanBrain;
+      if (!(this.boss instanceof Brain)) this.boss = new Brain(this);
       this.boss.reset();
     } else {
       this.boss = null;

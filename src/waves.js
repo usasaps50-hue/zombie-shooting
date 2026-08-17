@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { WAVE, waveCount, pickType, hpScale, isBossWave, bossHpScale, BOSS_ID } from './data/waves.js';
+import {
+  WAVE, waveCount, pickType, hpScale, rollBoss, pickBoss, bossHpScale,
+} from './data/waves.js';
 
 // ウェーブの進行役。決まった数を小分けに湧かせて、全部倒したら次へ進む
 export class Waves {
@@ -21,6 +23,9 @@ export class Waves {
     this.state = 'break';
     this.timer = 2.0;
     this.bossPending = false;
+    this.bossId = null;
+    // 前にボスが出てから何ウェーブ経ったか
+    this.sinceBoss = 0;
   }
 
   // 倒れて消えるまでの数秒は「残り」に数えない。倒した手応えがすぐ出る
@@ -39,11 +44,14 @@ export class Waves {
 
   #startWave() {
     this.wave++;
-    this.left = waveCount(this.wave);
+    // ボスが出るかは確率で決める。出ない回が続くほど確率が上がる
+    this.bossId = rollBoss(this.wave, this.sinceBoss) ? pickBoss(this.wave) : null;
+    this.sinceBoss = this.bossId ? 0 : this.sinceBoss + 1;
+    this.left = waveCount(this.wave, !!this.bossId);
     this.state = 'spawning';
     this.timer = 0;
     // ボスの回は、まずボスを1体出してから、おともを湧かせる
-    this.bossPending = isBossWave(this.wave);
+    this.bossPending = !!this.bossId;
     this.onWaveStart(this.wave, this.left, this.bossPending);
   }
 
@@ -58,7 +66,7 @@ export class Waves {
       const slot = this.pool.find((e) => !e.active);
       if (slot) {
         this.bossPending = false;
-        slot.spawnAs(BOSS_ID, this.spawns[0].clone(), bossHpScale(this.wave));
+        slot.spawnAs(this.bossId, this.spawns[0].clone(), bossHpScale(this.wave));
         this.left--;
         this.onBossSpawn?.(slot);
       }

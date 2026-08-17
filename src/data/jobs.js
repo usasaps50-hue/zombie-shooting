@@ -262,6 +262,30 @@ const TITAN_BOSS = {
   drop: { wood: [60, 90], brick: [60, 90], iron: [40, 60] },
 };
 
+// ボス「マザー」。動かない代わりにゾンビを産み続ける母体。
+// 4本の腕を全部落とさないと本体に攻撃が通らない
+const MOTHER_BOSS = {
+  ...NORMAL_ZOMBIE,
+  id: 'mother',
+  name: 'マザー',
+  model: 'mother',
+  boss: true,
+  // 動かないので、どのボスか見分けやすいよう別の頭を使う
+  bossKind: 'mother',
+  hp: 2000,
+  height: 5.2,
+  sight: 45,
+  walkSpeed: 0,
+  chaseSpeed: 0,
+  damage: 28,
+  reach: 8.5,
+  attackCooldown: 2.6,
+  structureDamage: 120,
+  breaksDrones: true,
+  droneDamage: 40,
+  drop: { wood: [50, 80], brick: [50, 80], iron: [30, 50] },
+};
+
 // 装甲を着るとHPが増え、殴りも重くなり、落とす素材も増える
 const ARMOR_BONUS = {
   silver: { hp: 50, damage: 8, drop: { brick: [5, 5] } },
@@ -315,4 +339,5 @@ export const ENEMIES = Object.fromEntries(Object.entries({
   mutantSilver: armored(MUTANT, 'silver', 'mutantSilver', '銀装甲のミュータント'),
   mutantGold: armored(MUTANT, 'gold', 'mutantGold', '金装甲のミュータント'),
   titan: TITAN_BOSS,
+  mother: MOTHER_BOSS,
 }).map(([id, def]) => [id, withCoins(def)]));
