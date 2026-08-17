@@ -6,6 +6,7 @@ import { Skeleton } from './skeleton.js';
 import { Titan } from './titan.js';
 import { Mother } from './mother.js';
 import { TitanBrain, MotherBrain } from './boss.js';
+import { isLoaded, GltfCharacter } from './gltfmodel.js';
 import { ENEMIES, JOBS, BUILD_LURE } from './data/jobs.js';
 import { floorHeight, STEP_HEIGHT, STEP_SLACK, EYE_HEIGHT } from './player.js';
 import { makeLabel, hpColor } from './label.js';
@@ -229,7 +230,16 @@ export class Enemy {
       this.root.remove(this.zombie.root);
       this.zombie.dispose?.();
     }
-    if (this.def.model === 'titan') {
+    // 外から持ってきたモデルが読めていれば、そちらを使う。
+    // 読めていなければ、これまでどおり手作りのモデルで動く
+    const gltfId = this.def.gltf;
+    if (gltfId && isLoaded(gltfId)) {
+      this.zombie = new GltfCharacter(gltfId, {
+        height: this.def.height,
+        tint: this.def.tint ?? null,
+        walkScale: this.def.animRate ?? 1,
+      });
+    } else if (this.def.model === 'titan') {
       this.zombie = new Titan();
     } else if (this.def.model === 'mother') {
       this.zombie = new Mother();

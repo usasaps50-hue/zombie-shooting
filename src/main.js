@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createWorld } from './world.js';
+import { preloadModels } from './gltfmodel.js';
 import { Input } from './input.js';
 import { Player, EYE_HEIGHT, floorHeight } from './player.js';
 import { Weapons } from './weapons.js';
@@ -56,6 +57,10 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 300);
+// 外から持ってきたモデルを先に読み込む。
+// 読めなくても手作りのモデルで遊べるので、失敗しても止めない
+await preloadModels();
+
 const { scene, colliders, spawns, stairPoints } = createWorld();
 scene.add(camera);
 
@@ -2226,6 +2231,7 @@ addEventListener('resize', resize);
 // iOS は回転直後の innerWidth が古いままなので、少し待ってもう一度合わせる
 addEventListener('orientationchange', () => setTimeout(resize, 300));
 resize();
+
 
 
 

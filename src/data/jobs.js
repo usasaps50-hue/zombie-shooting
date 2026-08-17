@@ -75,6 +75,8 @@ const NORMAL_ZOMBIE = {
   name: '通常ゾンビ',
   model: 'zombie',
   skin: 'green',
+  // 外から持ってきたモデルを使うときの名前。読めていなければ手作りのほうで動く
+  gltf: 'zombie',
   armor: null,
   hp: 75,
   height: 1.8,
