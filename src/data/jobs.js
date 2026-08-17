@@ -259,6 +259,14 @@ const TITAN_BOSS = {
   structureDamage: 200,
   breaksDrones: true,
   droneDamage: 60,
+  // 味方になったときだけ使う跳びかかりの設定。
+  // 敵として動いているときは TitanBrain が動かすので、ここは見ない
+  slamRange: 22,
+  slamRadius: 4.0,
+  slamDamage: 40,
+  slamChargeTime: 1.0,
+  slamTime: 1.0,
+  slamHeight: 6,
   drop: { wood: [60, 90], brick: [60, 90], iron: [40, 60] },
 };
 

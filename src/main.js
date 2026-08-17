@@ -34,7 +34,7 @@ import {
 import { ARMOR_GUN_REDUCTION } from './data/classes.js';
 import { IS_TOUCH, QUALITY } from './device.js';
 import { sfx } from './audio.js';
-import { Minions, MINION } from './minion.js';
+import { Minions, MINION, BOSS_MINION } from './minion.js';
 import { Shockwave, TITAN, MOTHER } from './boss.js';
 import { Chat, cleanText } from './chat.js';
 
@@ -476,20 +476,20 @@ function castRod(item) {
 
 // リボーンロッドで倒した敵を、確率で味方として起こす
 function tryRevive(def, position, item, ownerId = net.id) {
-  // ボスは味方にできない（見た目も強さも味方の仕組みに乗らない）
-  if (def.boss) return false;
   if (Math.random() >= (item.reviveChance ?? 0)) return false;
-  minions.add({
-    defId: def.id,
-    ownerId,
-    maxHp: Math.max(1, Math.round(def.hp / 2)),
-  }, position);
+  // ふつうの敵は元のHPの半分。ボスはそのままだと硬すぎるので、もっと減らす
+  const maxHp = def.boss
+    ? Math.max(1, Math.round(def.hp * BOSS_MINION.hpScale))
+    : Math.max(1, Math.round(def.hp / 2));
+  minions.add({ defId: def.id, ownerId, maxHp }, position);
   effects.raise(position);
   sfx.playAt('raise', position);
   // 必殺技のゲージは「味方にした数」で貯まる。倒したのが他の人ならその人に渡す
   if (ownerId === net.id) {
     game?.ult.add('revive', 1);
-    hud.setToast(`${def.name}が味方になった！（味方 ${minions.count}体）`, 1.8);
+    hud.setToast(def.boss
+      ? `⭐ ${def.name}が味方になった！（弱くなっているが心強い）`
+      : `${def.name}が味方になった！（味方 ${minions.count}体）`, def.boss ? 3.2 : 1.8);
   } else {
     net.send('mini', { to: ownerId, n: def.name });
   }
@@ -2153,6 +2153,7 @@ addEventListener('resize', resize);
 // iOS は回転直後の innerWidth が古いままなので、少し待ってもう一度合わせる
 addEventListener('orientationchange', () => setTimeout(resize, 300));
 resize();
+
 
 
 

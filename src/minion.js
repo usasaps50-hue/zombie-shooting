@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { Zombie } from './zombie.js';
 import { Mutant } from './mutant.js';
 import { Skeleton } from './skeleton.js';
+import { Titan } from './titan.js';
+import { Mother } from './mother.js';
 import { makeLabel, hpColor } from './label.js';
 import { floorHeight, STEP_HEIGHT, STEP_SLACK } from './player.js';
 import { ENEMIES } from './data/jobs.js';
@@ -41,6 +43,17 @@ const SLAM_COOLDOWN = 9;
 const BASE_DAMAGE = ENEMIES.normal.damage;
 const BASE_SPEED = ENEMIES.normal.chaseSpeed;
 
+// ボスを味方にしたときの弱体化。そのままだと味方が強すぎて
+// ゲームが終わってしまうので、火力も体の大きさも落とす
+export const BOSS_MINION = {
+  // 元のHPのこの割合で起き上がる（ふつうの敵は半分）
+  hpScale: 0.15,
+  // 火力の上限。ボスの数字をそのまま持ってこない
+  damageMax: 30,
+  // 見た目の大きさ。7mのまま味方にすると道をふさいでしまう
+  sizeScale: 0.6,
+};
+
 // 元になった敵から、この味方の強さと特性を決める。
 // defId が無い（必殺技の影）ときは、これまでどおりの標準の数字
 export function minionStats(defId) {
@@ -52,19 +65,26 @@ export function minionStats(defId) {
       speed: MINION.speed, height: MINION.height, behavior: null,
     };
   }
+  // ボスは弱くしてから味方にする
+  const boss = !!def.boss;
+  const rawDamage = Math.max(1, Math.round(MINION.damage * (def.damage / BASE_DAMAGE)));
   return {
     def,
+    boss,
     model: def.model ?? null,
+    // 見た目の大きさ。ボスだけ小さくする
+    sizeScale: boss ? BOSS_MINION.sizeScale : 1,
     // 索敵はいまより狭くならず、広すぎもしないところに収める
     sight: THREE.MathUtils.clamp(def.sight, MINION.sight, MAX_SIGHT),
-    reach: def.reach ?? MINION.reach,
-    // 元の敵どうしの強さの差を、そのまま味方の火力の差にする
-    damage: Math.max(1, Math.round(MINION.damage * (def.damage / BASE_DAMAGE))),
+    reach: boss ? (def.reach ?? MINION.reach) * BOSS_MINION.sizeScale : (def.reach ?? MINION.reach),
+    // 元の敵どうしの強さの差を、そのまま味方の火力の差にする。
+    // ボスだけは上限をかけて、味方が強くなりすぎないようにする
+    damage: boss ? Math.min(rawDamage, BOSS_MINION.damageMax) : rawDamage,
     attackCooldown: def.attackCooldown ?? MINION.attackCooldown,
     // 足の速さも同じ考え方。ミュータントは重く、俊足ゾンビは速い。
     // ただし俊足ゾンビは元が2倍以上あるので、行きすぎないところで止める
     speed: MINION.speed * THREE.MathUtils.clamp(def.chaseSpeed / BASE_SPEED, 0.8, 1.35),
-    height: def.height ?? MINION.height,
+    height: (def.height ?? MINION.height) * (boss ? BOSS_MINION.sizeScale : 1),
     // 'gunner'（ガンマ）／'archer'（弓スケルトン）／null
     behavior: def.behavior ?? null,
   };
@@ -111,6 +131,8 @@ export class Minion {
 
     this.root = new THREE.Group();
     this.zombie = this.#buildModel();
+    // ボスは元の大きさのままだと味方として大きすぎるので縮める
+    if (this.stats.sizeScale !== 1) this.zombie.root.scale.multiplyScalar(this.stats.sizeScale);
     // 影の味方は服も含めて真っ黒にする。
     // 色を暗くすると、貼ってあるテクスチャごと暗くなる
     if (black) {
@@ -161,6 +183,8 @@ export class Minion {
     if (this.black) return new Zombie('shadow', null, {});
     const def = this.stats.def;
     if (!def) return new Zombie('green', null, {});
+    if (def.model === 'titan') return new Titan();
+    if (def.model === 'mother') return new Mother();
     if (def.model === 'mutant') return new Mutant(def.armor);
     if (def.model === 'skeleton') return new Skeleton({ weapon: def.weapon });
     return new Zombie(def.skin, def.armor, { outfit: def.outfit });
