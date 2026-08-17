@@ -260,6 +260,43 @@ const SHRIEKER_ZOMBIE = {
   drop: { wood: [6, 10], brick: [3, 6] },
 };
 
+// 天井ゾンビ。ビルの壁を這い上がって、屋上から飛び降りてくる。
+// 地上では弱いので、下で捕まえれば怖くない
+const CLIMBER_ZOMBIE = {
+  ...NORMAL_ZOMBIE,
+  id: 'climber',
+  name: '天井ゾンビ',
+  skin: 'climber',
+  behavior: 'climber',
+  // 手足が長く、ひょろりと背が高い
+  stretch: [0.74, 1.26, 0.74],
+  hp: 60,
+  height: 2.15,
+  sight: 34,
+  walkSpeed: 1.3,
+  chaseSpeed: 3.2,
+  // 地上での殴りは弱い
+  damage: 8,
+  reach: 2.0,
+  attackCooldown: 1.3,
+  structureDamage: 12,
+  avoidsWalls: true,
+  // 登れる壁の高さの範囲と、探す距離
+  climbMinTop: 4.5,
+  climbMaxTop: 24,
+  climbRange: 30,
+  climbSpeed: 4.2,
+  // 屋上から飛び降りる。真上これくらいまで近づいたら降りる
+  dropRange: 8,
+  dropDamage: 22,
+  dropRadius: 2.8,
+  dropTime: 0.8,
+  dropHeight: 2.5,
+  // 一度降りたら、つぎに登りはじめるまでの待ち
+  climbCooldown: 9,
+  drop: { wood: [5, 9], brick: [3, 6] },
+};
+
 // 巨大なミュータント。地面を叩き割り、瀕死になると跳んでくる
 const MUTANT = {
   ...NORMAL_ZOMBIE,
@@ -393,6 +430,7 @@ export const ENEMIES = Object.fromEntries(Object.entries({
   skeletonArcher: SKELETON_ARCHER,
   swarm: SWARM_ZOMBIE,
   shrieker: SHRIEKER_ZOMBIE,
+  climber: CLIMBER_ZOMBIE,
   silver: armored(NORMAL_ZOMBIE, 'silver', 'silver', '銀の装甲ゾンビ'),
   gold: armored(NORMAL_ZOMBIE, 'gold', 'gold', '金の装甲ゾンビ'),
   blueSilver: armored(BLUE_ZOMBIE, 'silver', 'blueSilver', '銀装甲の索敵ゾンビ'),

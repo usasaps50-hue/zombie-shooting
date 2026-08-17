@@ -144,6 +144,11 @@ const SKINS = {
     face: '#b8b0a2', dark: '#6e6759', light: '#d6cfc0', hand: '#c3bbad', foot: '#8e8779',
     eyes: 'angry', mouth: 'grin',
   },
+  // 天井ゾンビ。壁を這い上がる、手足の長い個体
+  climber: {
+    face: '#8a7f9a', dark: '#4a4258', light: '#a99fb8', hand: '#9b91ab', foot: '#6d6480',
+    eyes: 'angry',
+  },
   // ネクロマンサーが呼び出す、真っ黒な影の味方
   shadow: {
     face: '#1c1b22', dark: '#0d0c11', light: '#33313d', hand: '#26242e', foot: '#141319',

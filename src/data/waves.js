@@ -82,6 +82,7 @@ export const SPAWN_TABLE = [
   { id: 'swarm', from: 4, rarity: 0.7 },
   { id: 'skeleton', from: 5, rarity: 0.9 },
   { id: 'gold', from: 5, rarity: 1.0 },
+  { id: 'climber', from: 6, rarity: 0.6 },
   { id: 'skeletonArcher', from: 6, rarity: 0.75 },
   { id: 'blueGold', from: 6, rarity: 1.0 },
   { id: 'mutant', from: 7, rarity: 0.6 },

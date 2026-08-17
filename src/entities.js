@@ -179,6 +179,18 @@ export class Enemy {
     this.alertSpot = new THREE.Vector3();
     this.slamFrom = new THREE.Vector3();
     this.slamTo = new THREE.Vector3();
+    // 天井ゾンビ：壁を登っているときの状態
+    //  null（地上）／'toWall'（壁へ向かう）／'up'（登る）／'roof'（屋上）／'drop'（落下）
+    this.climbState = null;
+    this.climbTop = 0;
+    this.climbFace = new THREE.Vector3();
+    // 登りきったあと、屋上の内側へ入る向き
+    this.climbInX = 0;
+    this.climbInZ = 0;
+    this.climbUntil = 0;
+    this.nextClimbAt = 0;
+    this.roofBest = Infinity;
+    this.roofStuckAt = 0;
     // 叫びゾンビの声で足が速くなっている間の、終わる時刻
     this.hasteUntil = 0;
     this.hasted = false;
@@ -314,6 +326,11 @@ export class Enemy {
         && Math.random() < this.def.reviveChance;
       this.zombie.setMode('death');
       this.velocity.set(0, 0, 0);
+      // 壁の途中や屋上で倒したときは、宙に浮いたままにならないよう地面へ落とす
+      if (this.climbState) {
+        this.climbState = null;
+        this.root.position.y = 0;
+      }
       this.label.sprite.visible = false;
       this.state = 'dead';
       this.target = null;
@@ -564,7 +581,7 @@ export class Enemy {
     if (this.alive && !this.thinkSkip) {
       this.#think(dt * (far ? 3 : 1), now, {
         colliders, structures, player, onHitPlayer, onBreak, onShoot, onSpot, onSwing,
-        stairPoints, onShriek,
+        stairPoints, onShriek, onSlam, onSlamAim,
       });
     }
 
@@ -701,6 +718,206 @@ export class Enemy {
   // 目の高さ。見通しの判定と、弾を出す高さに使う
   eyePoint(out = new THREE.Vector3()) {
     return out.copy(this.root.position).setY(this.root.position.y + this.def.height * 0.78);
+  }
+
+  // 登れそうなビルを1つ選ぶ。相手の近くにある、ほどよい高さのものを探す
+  #pickWall(colliders, goal) {
+    const def = this.def;
+    const pos = this.root.position;
+    let best = null;
+    let bestScore = Infinity;
+    for (const c of colliders) {
+      const top = c.max.y;
+      if (top < def.climbMinTop || top > def.climbMaxTop) continue;
+      // 細長い壁（外周の塀など）ではなく、屋上を歩ける大きさのものだけ
+      if (c.max.x - c.min.x < 4 || c.max.z - c.min.z < 4) continue;
+      const cx = (c.min.x + c.max.x) / 2;
+      const cz = (c.min.z + c.max.z) / 2;
+      if (Math.hypot(cx - pos.x, cz - pos.z) > def.climbRange) continue;
+      // 相手に近いビルほど良い。自分から遠すぎるものは選ばない
+      const score = Math.hypot(cx - goal.x, cz - goal.z)
+        + Math.hypot(cx - pos.x, cz - pos.z) * 0.4;
+      if (score < bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+    return best;
+  }
+
+  // 選んだビルの、いちばん近い側面に取りつく場所を決める
+  #setClimbTarget(wall) {
+    const pos = this.root.position;
+    // 自分の位置をビルの外周に貼りつける
+    const x = THREE.MathUtils.clamp(pos.x, wall.min.x, wall.max.x);
+    const z = THREE.MathUtils.clamp(pos.z, wall.min.z, wall.max.z);
+    // 東西と南北、どちらの面が近いか
+    const dx = Math.min(Math.abs(x - wall.min.x), Math.abs(x - wall.max.x));
+    const dz = Math.min(Math.abs(z - wall.min.z), Math.abs(z - wall.max.z));
+    let fx = x;
+    let fz = z;
+    if (dx < dz) {
+      const west = Math.abs(x - wall.min.x) < Math.abs(x - wall.max.x);
+      fx = west ? wall.min.x - 0.7 : wall.max.x + 0.7;
+      this.climbInX = west ? 1 : -1;
+      this.climbInZ = 0;
+    } else {
+      const north = Math.abs(z - wall.min.z) < Math.abs(z - wall.max.z);
+      fz = north ? wall.min.z - 0.7 : wall.max.z + 0.7;
+      this.climbInX = 0;
+      this.climbInZ = north ? 1 : -1;
+    }
+    this.climbFace.set(fx, 0, fz);
+    this.climbTop = wall.max.y;
+  }
+
+  #giveUpClimb(now) {
+    this.climbState = null;
+    this.nextClimbAt = now + 4;
+  }
+
+  // 天井ゾンビ。壁を這い上がって屋上から飛び降りる。
+  // 自分で動きを決めたときは true を返す（false なら普通の追いかけに戻す）
+  #climberThink(dt, now, pos, player, sees, colliders, structures, onSlam, onSlamAim, onHitPlayer) {
+    const def = this.def;
+
+    // 飛び降りている最中
+    if (this.climbState === 'drop') {
+      this.slamT = Math.min(this.slamT + dt / def.dropTime, 1);
+      const p = this.slamT;
+      pos.lerpVectors(this.slamFrom, this.slamTo, p);
+      // 弧を描いて落ちる。飛び出してから落下する形
+      pos.y = THREE.MathUtils.lerp(this.slamFrom.y, this.slamTo.y, p * p)
+        + Math.sin(p * Math.PI) * def.dropHeight;
+      this.zombie.setMode('walk');
+      if (p < 1) return true;
+      pos.y = this.slamTo.y;
+      this.climbState = null;
+      this.nextClimbAt = now + def.climbCooldown;
+      this.#unstick(colliders, structures);
+      onSlam(this, def.dropDamage, def.dropRadius);
+      this.state = 'chase';
+      return true;
+    }
+
+    // 壁を登っている最中
+    if (this.climbState === 'up') {
+      pos.x = this.climbFace.x;
+      pos.z = this.climbFace.z;
+      pos.y += def.climbSpeed * dt;
+      // 壁のほうを向く
+      this.#face(Math.atan2(this.climbInX, this.climbInZ), dt * 3);
+      this.zombie.setMode('walk');
+      if (pos.y >= this.climbTop) {
+        // 屋上へ乗り上げる。少し内側へ入れて、足場に乗せる
+        pos.y = this.climbTop;
+        pos.x += this.climbInX * 1.5;
+        pos.z += this.climbInZ * 1.5;
+        this.climbState = 'roof';
+        this.climbUntil = now + 9;
+        this.roofBest = Infinity;
+        this.roofStuckAt = now;
+      } else if (now > this.climbUntil) {
+        // 何かおかしくて登りきれない。あきらめて地面へ戻る
+        pos.y = 0;
+        this.#giveUpClimb(now);
+      }
+      return true;
+    }
+
+    // 屋上を歩いて、相手の真上へ回りこむ
+    if (this.climbState === 'roof') {
+      // 相手を見失ったか、屋上で手間取ったら、そこから飛び降りる
+      if (!sees || now > this.climbUntil) {
+        this.#dropAtPlayer(player, now, onSlamAim, colliders);
+        return true;
+      }
+      const to = player.position.clone().sub(pos).setY(0);
+      const flat = to.length();
+      this.#face(Math.atan2(-to.x, -to.z), dt);
+      // 十分に近づいたら飛び降りる
+      if (flat <= def.dropRange) {
+        this.#dropTo(player.position.x, player.position.z, now, onSlamAim, colliders);
+        return true;
+      }
+      to.divideScalar(flat || 1);
+      this.zombie.setMode('walk');
+      const before = pos.y;
+      this.#step(to.x * def.chaseSpeed * dt, to.z * def.chaseSpeed * dt, colliders, structures);
+      // 屋上から落ちかけたら、そこで飛び降りる
+      if (pos.y < before - 0.8) {
+        this.#dropTo(player.position.x, player.position.z, now, onSlamAim, colliders);
+        return true;
+      }
+      // 屋上には瓦礫が乗っていて、進めなくなることがある。
+      // しばらく近づけていなければ、待たずに飛び降りる
+      if (flat < this.roofBest - 0.5) {
+        this.roofBest = flat;
+        this.roofStuckAt = now;
+      } else if (now - this.roofStuckAt > 2.5) {
+        this.#dropAtPlayer(player, now, onSlamAim, colliders);
+      }
+      return true;
+    }
+
+    // ---- ここからは地上 ----
+    if (this.climbState === 'toWall') {
+      const to = this.climbFace.clone().sub(pos).setY(0);
+      const flat = to.length();
+      if (flat < 1.1) {
+        this.climbState = 'up';
+        this.climbUntil = now + 12;
+        return true;
+      }
+      if (now > this.climbUntil) {
+        this.#giveUpClimb(now);
+        return false;
+      }
+      this.#face(Math.atan2(-to.x, -to.z), dt);
+      to.divideScalar(flat || 1);
+      this.zombie.setMode('walk');
+      this.state = 'chase';
+      this.#advance(to.x, to.z, this.chaseSpeedNow * dt, colliders, structures);
+      return true;
+    }
+
+    // 登りはじめるか決める。相手が見えていて、待ち時間が明けていれば登る
+    if (sees && now >= this.nextClimbAt) {
+      const wall = this.#pickWall(colliders, player.position);
+      if (wall) {
+        this.#setClimbTarget(wall);
+        this.climbState = 'toWall';
+        this.climbUntil = now + 12;
+        return true;
+      }
+      // 登れる建物が近くにない。しばらく普通に追いかける
+      this.nextClimbAt = now + 3;
+    }
+    return false;
+  }
+
+  // 相手めがけて飛び降りる。遠すぎるときは、跳べる範囲までにとどめる
+  #dropAtPlayer(player, now, onSlamAim, colliders) {
+    const pos = this.root.position;
+    if (!player) return this.#dropTo(pos.x, pos.z, now, onSlamAim, colliders);
+    const to = player.position.clone().sub(pos).setY(0);
+    const flat = to.length();
+    const reach = Math.min(flat, this.def.dropRange * 1.6);
+    to.divideScalar(flat || 1).multiplyScalar(reach);
+    return this.#dropTo(pos.x + to.x, pos.z + to.z, now, onSlamAim, colliders);
+  }
+
+  // 飛び降りる。落ちる先に印を出す
+  #dropTo(x, z, now, onSlamAim = null, colliders = null) {
+    const def = this.def;
+    const pos = this.root.position;
+    const landing = colliders ? floorHeight(colliders, x, z, 0, RADIUS) : 0;
+    this.slamFrom.copy(pos);
+    this.slamTo.set(x, landing, z);
+    this.slamT = 0;
+    this.climbState = 'drop';
+    this.state = 'chase';
+    onSlamAim?.(this, this.slamTo.clone(), def.dropRadius, def.dropTime);
   }
 
   // 叫びゾンビ。攻撃せず、距離を保ちながら、ときどき叫んで仲間の足を速くする
@@ -903,6 +1120,12 @@ export class Enemy {
       return;
     }
 
+    // 天井ゾンビ。壁を登って屋上から飛び降りる。
+    // 登れないときは false が返るので、そのまま普通の追いかけに進む
+    if (this.def.behavior === 'climber'
+      && this.#climberThink(dt, now, pos, player, sees, colliders, structures,
+        ctx.onSlam ?? (() => {}), ctx.onSlamAim ?? (() => {}), onHitPlayer)) return;
+
     // 叫びゾンビ。殴らず、距離を取りながら仲間を鼓舞する
     if (this.def.behavior === 'shrieker') {
       this.#shriekThink(dt, now, pos, player, sees, colliders, structures, onShriek);
@@ -1040,6 +1263,8 @@ export class Enemy {
     this.hasteUntil = 0;
     this.hasted = false;
     this.nextShriekAt = 0;
+    this.climbState = null;
+    this.nextClimbAt = 0;
     this.burrowUsed = false;
     this.climbing = null;
     this.revived = false;
