@@ -55,6 +55,11 @@ export function createWorld() {
   sun.shadow.camera.top = ARENA;
   sun.shadow.camera.bottom = -ARENA;
   sun.shadow.camera.far = 110;
+  // 影の「ずらし量」。これが無いと、丸みのあるモデルに
+  // 自分の影が斑点のように落ちてしまう（箱だけの頃は目立たなかった）。
+  // normalBias は面の向きに沿ってずらすので、曲面にはこちらがよく効く
+  sun.shadow.normalBias = 0.06;
+  sun.shadow.bias = -0.0006;
   scene.add(sun);
 
   const colliders = [];
