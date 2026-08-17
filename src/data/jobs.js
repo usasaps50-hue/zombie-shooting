@@ -208,6 +208,58 @@ const SKELETON_ARCHER = {
   drop: { wood: [8, 12], brick: [5, 9] },
 };
 
+// 群れゾンビ。1体ずつではなく、まとまって湧いてくる小型
+const SWARM_ZOMBIE = {
+  ...NORMAL_ZOMBIE,
+  id: 'swarm',
+  name: '群れゾンビ',
+  skin: 'swarm',
+  // 小さいので、モデル全体を縮める
+  stretch: [0.72, 0.68, 0.72],
+  hp: 25,
+  height: 1.25,
+  sight: 18,
+  walkSpeed: 1.6,
+  chaseSpeed: 4.4,
+  damage: 2,
+  reach: 1.7,
+  attackCooldown: 0.8,
+  structureDamage: 8,
+  // 湧くときは、この数がまとめて出てくる
+  packSize: 6,
+  drop: { wood: [1, 3] },
+};
+
+// 叫びゾンビ。自分では殴らず、まわりのゾンビの足を速くする
+const SHRIEKER_ZOMBIE = {
+  ...NORMAL_ZOMBIE,
+  id: 'shrieker',
+  name: '叫びゾンビ',
+  skin: 'shrieker',
+  behavior: 'shrieker',
+  // やせこけて背だけ高い
+  stretch: [0.82, 1.12, 0.82],
+  hp: 70,
+  height: 2.0,
+  sight: 30,
+  walkSpeed: 1.4,
+  chaseSpeed: 3.4,
+  // 殴ってこない。近づかれたら逃げる
+  damage: 0,
+  reach: 0,
+  attackCooldown: 99,
+  structureDamage: 0,
+  // このくらいの距離を保って逃げ回る
+  keepRange: 16,
+  avoidsWalls: true,
+  // 何秒ごとに叫ぶか／届く範囲／速くなる倍率と時間
+  shriekCooldown: 10,
+  shriekRadius: 22,
+  hasteScale: 1.5,
+  hasteTime: 6,
+  drop: { wood: [6, 10], brick: [3, 6] },
+};
+
 // 巨大なミュータント。地面を叩き割り、瀕死になると跳んでくる
 const MUTANT = {
   ...NORMAL_ZOMBIE,
@@ -339,6 +391,8 @@ export const ENEMIES = Object.fromEntries(Object.entries({
   gamma: GAMMA_ZOMBIE,
   skeleton: SKELETON,
   skeletonArcher: SKELETON_ARCHER,
+  swarm: SWARM_ZOMBIE,
+  shrieker: SHRIEKER_ZOMBIE,
   silver: armored(NORMAL_ZOMBIE, 'silver', 'silver', '銀の装甲ゾンビ'),
   gold: armored(NORMAL_ZOMBIE, 'gold', 'gold', '金の装甲ゾンビ'),
   blueSilver: armored(BLUE_ZOMBIE, 'silver', 'blueSilver', '銀装甲の索敵ゾンビ'),

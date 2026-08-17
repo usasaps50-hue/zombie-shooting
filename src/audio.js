@@ -260,6 +260,15 @@ class Sfx {
         this.#tone('sine', 520, 780, at, 0.38, gain);
         break;
 
+      // 叫びゾンビの声。耳ざわりな甲高い悲鳴
+      case 'shriek': {
+        this.#env(gain, at, 0.02, 1.1, 0.75 * v);
+        this.#tone('sawtooth', 900, 2200, at, 0.5, gain);
+        this.#tone('square', 1350, 700, at + 0.25, 0.7, gain);
+        this.#noiseSource(at, 0.9, gain, { type: 'bandpass', from: 2400, to: 5200, q: 3 });
+        break;
+      }
+
       // スピアの突進。風を切る短い音
       case 'dash': {
         this.#env(gain, at, 0.006, 0.22, 0.55 * v);

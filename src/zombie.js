@@ -134,6 +134,16 @@ const SKINS = {
   },
   // 地中に潜るゾンビ
   purple: { face: '#7b5aa6', dark: '#3d2a58', light: '#b39ad8', hand: '#8f6cbb', foot: '#5d4180' },
+  // 群れゾンビ。小さくて素早い、灰緑の個体
+  swarm: {
+    face: '#6f7f66', dark: '#3f4a39', light: '#8d9c82', hand: '#8d9c82', foot: '#5a6852',
+    eyes: 'angry',
+  },
+  // 叫びゾンビ。血の気のない、やせこけた個体
+  shrieker: {
+    face: '#b8b0a2', dark: '#6e6759', light: '#d6cfc0', hand: '#c3bbad', foot: '#8e8779',
+    eyes: 'angry', mouth: 'grin',
+  },
   // ネクロマンサーが呼び出す、真っ黒な影の味方
   shadow: {
     face: '#1c1b22', dark: '#0d0c11', light: '#33313d', hand: '#26242e', foot: '#141319',

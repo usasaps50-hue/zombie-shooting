@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {
   WAVE, waveCount, pickType, hpScale, rollBoss, pickBoss, bossHpScale,
 } from './data/waves.js';
+import { ENEMIES } from './data/jobs.js';
 
 // ウェーブの進行役。決まった数を小分けに湧かせて、全部倒したら次へ進む
 export class Waves {
@@ -72,21 +73,35 @@ export class Waves {
       }
     }
 
-    const room = WAVE.aliveMax - this.alive;
-    const n = Math.min(WAVE.batchSize, room, this.left);
-    for (let i = 0; i < n; i++) {
-      const enemy = this.pool.find((e) => !e.active);
-      if (!enemy) break;
+    let room = WAVE.aliveMax - this.alive;
+    let n = Math.min(WAVE.batchSize, room, this.left);
+    while (n > 0) {
+      const typeId = pickType(this.wave);
+      // 群れゾンビは1体ずつではなく、まとまって湧く。
+      // 群れは「1回に出す数」の上限を超えてもよい（ばらばらに出ると群れにならない）
+      const packSize = ENEMIES[typeId].packSize ?? 1;
+      const pack = Math.min(packSize, packSize > 1 ? room : n, this.left);
       const mouth = this.spawns[Math.floor(Math.random() * this.spawns.length)];
-      // 同じ口から複数出るとき、少しずらして重ならないようにする
-      const spread = (Math.random() - 0.5) * 4;
-      const spot = new THREE.Vector3(
-        mouth.x + (mouth.x ? 0 : spread),
-        0,
-        mouth.z + (mouth.z ? 0 : spread)
-      );
-      enemy.spawnAs(pickType(this.wave), spot, hpScale(this.wave));
-      this.left--;
+      let spawned = 0;
+      for (let i = 0; i < pack; i++) {
+        const enemy = this.pool.find((e) => !e.active);
+        if (!enemy) break;
+        // 同じ口から複数出るとき、少しずらして重ならないようにする
+        const spread = (Math.random() - 0.5) * (pack > 1 ? 5.5 : 4);
+        const along = pack > 1 ? (Math.random() - 0.5) * 3 : 0;
+        const spot = new THREE.Vector3(
+          mouth.x + (mouth.x ? along : spread),
+          0,
+          mouth.z + (mouth.z ? along : spread)
+        );
+        enemy.spawnAs(typeId, spot, hpScale(this.wave));
+        this.left--;
+        spawned++;
+      }
+      if (!spawned) break;
+      n -= spawned;
+      room -= spawned;
+      if (room <= 0) break;
     }
   }
 

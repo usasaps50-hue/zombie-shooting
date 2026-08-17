@@ -878,6 +878,9 @@ function setupNet() {
     } else if (msg.k === 'mark') {
       effects.slamMarker(at, msg.r, msg.l);
       sfx.playAt('growl', at, { volume: 1.4 });
+    } else if (msg.k === 'shriek') {
+      effects.shout(at, msg.r * 0.35);
+      sfx.playAt('shriek', at, { volume: 1.3 });
     } else if (msg.k === 'dash') {
       effects.dashTrail(at, msg.y, msg.d);
       sfx.playAt('dash', at, { volume: 0.8 });
@@ -1846,6 +1849,21 @@ function frame() {
       if (phase === 'in') hud.setToast(`${enemy.def.name}が地中にもぐった！`, 2.0);
       else hud.setToast(`${enemy.def.name}が足元から出てきた！`, 2.0);
     },
+    // 叫びゾンビの声。届いた範囲のゾンビの足が速くなる
+    onShriek: (enemy, radius, seconds, scale) => {
+      const at = enemy.position.clone().setY(enemy.position.y + enemy.def.height * 0.8);
+      effects.shout(at, radius * 0.35);
+      sfx.playAt('shriek', enemy.position, { volume: 1.3 });
+      net.send('fx', { k: 'shriek', p: [r2(at.x), r2(at.y), r2(at.z)], r: radius });
+      let n = 0;
+      for (const other of enemies) {
+        if (other === enemy || !other.active || !other.alive) continue;
+        if (other.position.distanceTo(enemy.position) > radius) continue;
+        other.haste(now, seconds, scale);
+        n++;
+      }
+      if (n) hud.setToast(`${enemy.def.name}の叫び！ ${n}体の足が速くなった`, 2.2);
+    },
     // ガンマゾンビが見つけた相手の居場所は、離れた仲間にも伝わる
     onSpot: (enemy, spot, first) => {
       for (const other of enemies) {
@@ -2208,6 +2226,7 @@ addEventListener('resize', resize);
 // iOS は回転直後の innerWidth が古いままなので、少し待ってもう一度合わせる
 addEventListener('orientationchange', () => setTimeout(resize, 300));
 resize();
+
 
 
 

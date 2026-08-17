@@ -168,6 +168,9 @@ export class Enemy {
     this.nextAttackAt = 0;
     // ミュータントの大ジャンプ。1回の生存につき1度だけ
     this.slamUsed = false;
+    this.hasteUntil = 0;
+    this.hasted = false;
+    this.nextShriekAt = 0;
     this.slamT = 0;
     this.chargeT = 0;
     this.thinkSkip = 0;
@@ -176,6 +179,11 @@ export class Enemy {
     this.alertSpot = new THREE.Vector3();
     this.slamFrom = new THREE.Vector3();
     this.slamTo = new THREE.Vector3();
+    // 叫びゾンビの声で足が速くなっている間の、終わる時刻
+    this.hasteUntil = 0;
+    this.hasted = false;
+    // 叫びゾンビ：つぎに叫べる時刻
+    this.nextShriekAt = 0;
     // ガンマゾンビ：一度見つけた相手は見失わない
     this.locked = false;
     this.shareAt = 0;
@@ -221,6 +229,8 @@ export class Enemy {
       this.zombie = new Zombie(this.def.skin, this.def.armor, { outfit: this.def.outfit });
     }
     this.zombie.walkRate = this.def.animRate ?? 1;
+    // 同じモデルでも、縦横を変えるだけで体つきの違いが出せる
+    if (this.def.stretch) this.zombie.root.scale.set(...this.def.stretch);
     this.root.add(this.zombie.root);
 
     // アニメーションで動く見た目とは別に、当たり判定は固定のカプセルで取る
@@ -311,6 +321,17 @@ export class Enemy {
       if (this.zombie.aiming !== undefined) this.zombie.aiming = false;
     }
     return true;
+  }
+
+  // 叫びゾンビの声を浴びた。しばらく足が速くなる
+  haste(now, seconds, scale) {
+    this.hasteUntil = Math.max(this.hasteUntil, now + seconds);
+    this.hasteScale = scale;
+  }
+
+  // いまの走る速さ。叫びを浴びている間だけ速い
+  get chaseSpeedNow() {
+    return this.def.chaseSpeed * (this.hasted ? (this.hasteScale ?? 1.5) : 1);
   }
 
   // 銃声を聞いた。しばらくその場所へ向かう。
@@ -462,8 +483,11 @@ export class Enemy {
       colliders = [], structures = [], players = [],
       onHitPlayer = () => {}, onBreak = () => {}, onSlam = () => {}, slamTargets = () => [],
       onSlamAim = () => {}, onShoot = () => {}, onBurrow = () => {}, onSpot = () => {},
-      onSwing = () => {}, stairPoints = [],
+      onSwing = () => {}, stairPoints = [], onShriek = () => {},
     } = world;
+    // 叫びを浴びている間だけ足が速くなる
+    this.hasted = now < this.hasteUntil;
+
     // オンラインでは何人もいる。そのつど一番近い相手を狙う
     const player = nearestPlayer(players, this.root.position);
 
@@ -539,7 +563,8 @@ export class Enemy {
 
     if (this.alive && !this.thinkSkip) {
       this.#think(dt * (far ? 3 : 1), now, {
-        colliders, structures, player, onHitPlayer, onBreak, onShoot, onSpot, onSwing, stairPoints,
+        colliders, structures, player, onHitPlayer, onBreak, onShoot, onSpot, onSwing,
+        stairPoints, onShriek,
       });
     }
 
@@ -678,6 +703,48 @@ export class Enemy {
     return out.copy(this.root.position).setY(this.root.position.y + this.def.height * 0.78);
   }
 
+  // 叫びゾンビ。攻撃せず、距離を保ちながら、ときどき叫んで仲間の足を速くする
+  #shriekThink(dt, now, pos, player, sees, colliders, structures, onShriek) {
+    // 相手がいてもいなくても、時間が来たら叫ぶ
+    if (now >= this.nextShriekAt) {
+      this.nextShriekAt = now + this.def.shriekCooldown;
+      this.state = 'attack';
+      this.zombie.setMode('attack');
+      onShriek(this, this.def.shriekRadius, this.def.hasteTime, this.def.hasteScale);
+      return;
+    }
+
+    if (!sees) {
+      // 誰も見えないときは、ふらふらと歩き回る
+      this.state = 'wander';
+      this.#wander(dt, now, colliders, structures);
+      return;
+    }
+
+    const to = player.position.clone().sub(pos).setY(0);
+    const dist = to.length();
+    // こちらを向いてはいるが、近づかれたら逃げる
+    this.#face(Math.atan2(-to.x, -to.z), dt);
+    const dir = to.divideScalar(dist || 1);
+
+    if (dist < this.def.keepRange) {
+      // 逃げる。壁にぶつかったら左右へ回り込む
+      this.state = 'chase';
+      this.zombie.setMode('walk');
+      this.#advance(-dir.x, -dir.z, this.chaseSpeedNow * dt, colliders, structures);
+      return;
+    }
+    if (dist > this.def.keepRange * 1.6) {
+      // 離れすぎたら、声が届く位置まで戻る
+      this.state = 'chase';
+      this.zombie.setMode('walk');
+      this.#advance(dir.x, dir.z, this.def.walkSpeed * dt, colliders, structures);
+      return;
+    }
+    this.state = 'idle';
+    this.zombie.setMode('idle');
+  }
+
   // 遠くから撃つ種類の動き。撃てたら true、撃てないときは false を返して
   // 普通に近づく処理へ渡す
   #ranged(dt, now, player, colliders, structures, onShoot, onBreak, onSwing) {
@@ -758,7 +825,7 @@ export class Enemy {
 
   // 相手のほうへ1歩進む。人工の壁にぶつかったら壊しにかかる（true を返す）
   #approach(dt, dir, colliders, structures, onBreak, now, onSwing) {
-    const speed = this.def.chaseSpeed * dt;
+    const speed = this.chaseSpeedNow * dt;
     const wall = this.#advance(dir.x, dir.z, speed, colliders, structures);
     if (!wall) return false;
     this.state = 'break';
@@ -795,7 +862,8 @@ export class Enemy {
 
   #think(dt, now, ctx) {
     const {
-      colliders, structures, player, onHitPlayer, onBreak, onShoot, onSpot, onSwing, stairPoints,
+      colliders, structures, player, onHitPlayer, onBreak, onShoot, onSpot, onSwing,
+      stairPoints, onShriek = () => {},
     } = ctx;
     if (this.zombie.mode === 'hit') return;
     const pos = this.root.position;
@@ -832,6 +900,12 @@ export class Enemy {
       if (this.#headToCenter(dt, colliders, structures, onBreak, now, onSwing)) return;
       this.state = 'wander';
       this.#wander(dt, now, colliders, structures);
+      return;
+    }
+
+    // 叫びゾンビ。殴らず、距離を取りながら仲間を鼓舞する
+    if (this.def.behavior === 'shrieker') {
+      this.#shriekThink(dt, now, pos, player, sees, colliders, structures, onShriek);
       return;
     }
 
@@ -944,7 +1018,7 @@ export class Enemy {
         : Math.random() * Math.PI * 2;
     }
     this.#face(this.wanderYaw, dt);
-    const speed = this.def.walkSpeed * dt;
+    const speed = this.def.walkSpeed * (this.hasted ? (this.hasteScale ?? 1.5) : 1) * dt;
     const dx = -Math.sin(this.facing) * speed;
     const dz = -Math.cos(this.facing) * speed;
     const before = this.root.position.x + this.root.position.z;
@@ -963,6 +1037,9 @@ export class Enemy {
     this.state = 'wander';
     this.attacking = false;
     this.slamUsed = false;
+    this.hasteUntil = 0;
+    this.hasted = false;
+    this.nextShriekAt = 0;
     this.burrowUsed = false;
     this.climbing = null;
     this.revived = false;
