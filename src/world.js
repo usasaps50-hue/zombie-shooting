@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { QUALITY } from './device.js';
+import { buildingNames, buildingSize, makeBuilding } from './gltfmodel.js';
 
 // 廃都市の戦場。広すぎると敵を探して歩くだけの時間が長くなるので、
 // street（大通り）と block（街区）を詰めて置き、路地で入り組ませてある。
@@ -352,12 +353,52 @@ export function createWorld() {
   const overlapsReserved = (x, z, w, d) => reserved.some((r) =>
     x - w / 2 < r.maxX && x + w / 2 > r.minX && z - d / 2 < r.maxZ && z + d / 2 > r.minZ);
 
+  // 持ってきたビルのモデルが読めていれば、そちらで街を建てる。
+  // 背の低いものから並べておいて、街区の高さに近いものを選ぶ
+  const byHeight = buildingNames()
+    .map((name) => ({ name, size: buildingSize(name) }))
+    .filter((m) => m.size)
+    .sort((a, b) => a.size.y - b.size.y);
+
+  // 同じ場所にはいつも同じビルが建つよう、位置から選ぶ（毎回同じ街並みになる）
+  const pickBuilding = (x, z, wantH) => {
+    if (!byHeight.length) return null;
+    let bestGap = Infinity;
+    let best = byHeight[0];
+    for (const m of byHeight) {
+      const gap = Math.abs(m.size.y - wantH);
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = m;
+      }
+    }
+    // 高さの近いもの同士でばらけさせて、同じ建物が並ばないようにする
+    const near = byHeight.filter((m) => Math.abs(m.size.y - best.size.y) < 2.5);
+    return near[Math.abs(Math.round(x * 7.3 + z * 13.1)) % near.length];
+  };
+
   for (const [x, z, w, d, h] of blocks) {
     // 大通りと広場にはみ出すものは置かない
     if (Math.hypot(x, z) < OPEN_RADIUS + 3) continue;
     if (Math.abs(x) - w / 2 < ROAD_WIDTH / 2 + 1.2 && Math.abs(z) - d / 2 < ROAD_WIDTH / 2 + 1.2) continue;
     // 登れる廃墟・足場の場所には建てない
     if (overlapsReserved(x, z, w, d)) continue;
+
+    const pick = pickBuilding(x, z, h);
+    const model = pick ? makeBuilding(pick.name, Math.abs(Math.round(x * 3 + z * 5))) : null;
+    if (model) {
+      model.position.set(x, 0, z);
+      // 正面が大通りを向くように回す
+      model.rotation.y = Math.abs(x) > Math.abs(z)
+        ? (x > 0 ? -Math.PI / 2 : Math.PI / 2)
+        : (z > 0 ? 0 : Math.PI);
+      scene.add(model);
+      model.updateMatrixWorld(true);
+      colliders.push(new THREE.Box3().setFromObject(model));
+      continue;
+    }
+
+    // モデルが無いときは、これまでどおり箱のビルを建てる。
     // コンクリート・すすけた茶・焼けた灰の3系統に散らす。
     // 全部同じ明るさだと模型みたいに見えるので、暗いものを多めにする
     const tone = Math.random();

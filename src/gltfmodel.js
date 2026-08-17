@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 // 外から持ってきた3Dモデル（glTF）を読み込んで、
@@ -11,6 +12,8 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 // 読み込みに失敗しても遊べなくならないよう、失敗したら手作りのほうに戻る。
 
 const loader = new GLTFLoader();
+const fbxLoader = new FBXLoader();
+const texLoader = new THREE.TextureLoader();
 // id -> { scene, animations, height }
 const loaded = new Map();
 
@@ -35,6 +38,65 @@ const PROPS = {
 
 // id -> { scene, length }
 const props = new Map();
+
+// ---- 街のビル（FBX）----
+// FBX には色の指定が入っていないので、32x32 の小さな色パレットを
+// こちらで貼る。UV がそのパレットの色を指している作り
+const BUILDING_DIR = 'assets/models/buildings/Textured Models/Finished Textured Buildings/FBX/';
+const PALETTE_DIR = 'assets/models/buildings/Textured Models/Textures/';
+// センチで作られているので 1/100。さらに、1階ぶんが約3mになるようにそろえる
+const BUILDING_SCALE = 0.024;
+
+const BUILDING_NAMES = [
+  '1Story', '1Story_GableRoof', '1Story_RoundRoof', '1Story_Sign',
+  '2Story', '2Story_2', '2Story_Balcony', '2Story_Center', '2Story_Columns',
+  '2Story_Double', '2Story_GableRoof', '2Story_RoundRoof', '2Story_Sidehouse',
+  '2Story_Sign', '2Story_Slim', '2Story_Stairs', '2Story_Wide', '2Story_Wide_2Doors',
+  '3Story_Balcony', '3Story_Slim', '3Story_Small',
+  '4Story', '4Story_Center', '4Story_Wide_2Doors', '4Story_Wide_2Doors_Roof',
+  '6Story_Stack',
+];
+
+const PALETTES = [
+  'Texture_Grey', 'Texture_Light', 'Texture_Light2', 'Texture_Dark',
+  'Texture_Red', 'Texture_Blue', 'Texture_DarkBlue', 'Texture_DarkPurple',
+  'Texture_Yellow', 'Texture_Casino',
+];
+
+// name -> { object, size }
+const buildings = new Map();
+const palettes = [];
+
+export function buildingNames() {
+  return [...buildings.keys()];
+}
+
+export function buildingSize(name) {
+  return buildings.get(name)?.size ?? null;
+}
+
+// ビルを1棟作る。palette は色の番号（省略すると名前から決まるので、
+// 同じビルはいつも同じ色になり、街並みが毎回変わらない）
+export function makeBuilding(name, paletteIndex = null) {
+  const src = buildings.get(name);
+  if (!src || !palettes.length) return null;
+  const obj = src.object.clone(true);
+  const tex = palettes[(paletteIndex ?? hashOf(name)) % palettes.length];
+  obj.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.receiveShadow = true;
+    o.material = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92, metalness: 0 });
+  });
+  return obj;
+}
+
+// 名前から決まる番号。同じ名前なら必ず同じ色になる
+function hashOf(text) {
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+  return h;
+}
 
 export function hasProp(id) {
   return props.has(id);
@@ -132,8 +194,43 @@ export async function preloadModels() {
     }
   });
 
-  await Promise.all([...jobs, ...propJobs]);
-  return { characters: [...loaded.keys()], props: [...props.keys()] };
+  // 色パレット。小さいので、にじまないよう「点のまま」拡大する
+  const palJobs = PALETTES.map(async (name) => {
+    try {
+      const tex = await texLoader.loadAsync(`${PALETTE_DIR}${name}.png`);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      // 32x32 の色見本なので、なめらかに伸ばすと隣の色がにじむ
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+      tex.generateMipmaps = false;
+      tex.flipY = false;
+      palettes.push(tex);
+    } catch { /* 読めなければ色なしで出る */ }
+  });
+
+  // 街のビル
+  const buildingJobs = BUILDING_NAMES.map(async (name) => {
+    try {
+      const obj = await fbxLoader.loadAsync(`${BUILDING_DIR}${name}.fbx`);
+      obj.scale.setScalar(BUILDING_SCALE);
+      obj.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(obj);
+      // 足元が原点に来るように下げておく
+      obj.position.y -= box.min.y;
+      obj.updateMatrixWorld(true);
+      buildings.set(name, {
+        object: obj,
+        size: new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3()),
+      });
+    } catch { /* 読めなければ、これまでの箱のビルで出る */ }
+  });
+
+  await Promise.all([...jobs, ...propJobs, ...palJobs, ...buildingJobs]);
+  return {
+    characters: [...loaded.keys()],
+    props: [...props.keys()],
+    buildings: [...buildings.keys()],
+  };
 }
 
 // 手作りのモデルと同じ使い方ができる、glTF のキャラクター。
