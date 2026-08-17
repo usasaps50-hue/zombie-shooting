@@ -475,9 +475,6 @@ function castRod(item) {
 function tryRevive(def, position, item, ownerId = net.id) {
   if (Math.random() >= (item.reviveChance ?? 0)) return false;
   minions.add({
-    skin: def.skin,
-    armor: def.armor,
-    outfit: def.outfit,
     defId: def.id,
     ownerId,
     maxHp: Math.max(1, Math.round(def.hp / 2)),
@@ -874,6 +871,12 @@ function setupNet() {
     } else if (msg.k === 'mark') {
       effects.slamMarker(at, msg.r, msg.l);
       sfx.playAt('growl', at, { volume: 1.4 });
+    } else if (msg.k === 'shot') {
+      // 味方（ガンマ・弓スケルトン）が撃った光の筋
+      const to = new THREE.Vector3(...msg.q);
+      if (msg.b) effects.muzzleFlash(at, to.clone().sub(at).normalize());
+      effects.tracer(at, to);
+      sfx.playAt(msg.b ? 'pistol' : 'bow', at, { volume: 0.7 });
     }
   });
 }
@@ -1323,6 +1326,45 @@ function slam(enemy, damage, radius, now) {
   if (Math.hypot(p.x - center.x, p.z - center.z) <= radius) applyDamage(damage);
 }
 
+// ガンマ・弓スケルトンの味方が撃つ。
+// 味方の弾はゾンビにしか当たらないので、飛ばさずにその場で当てて、
+// 光の筋だけ描く（味方が増えても重くならない）
+function minionShoot(minion, kind, damage, target, now) {
+  if (!target?.alive) return;
+  const from = minion.zombie.muzzlePoint
+    ? minion.zombie.muzzlePoint(new THREE.Vector3())
+    : minion.eyePoint();
+  if (from.lengthSq() < 0.01) minion.eyePoint(from);
+  const to = target.eyePoint ? target.eyePoint(new THREE.Vector3()) : target.position.clone();
+
+  sfx.playAt(kind === 'bullet' ? 'pistol' : 'bow', minion.position, { volume: 0.7 });
+  if (kind === 'bullet') effects.muzzleFlash(from, to.clone().sub(from).normalize());
+  effects.tracer(from, to);
+  net.send('fx', {
+    k: 'shot',
+    p: [r2(from.x), r2(from.y), r2(from.z)],
+    q: [r2(to.x), r2(to.y), r2(to.z)],
+    b: kind === 'bullet' ? 1 : 0,
+  });
+  damageEnemy(target, damage, now, null, minion.ownerId ?? net.id);
+  // 銃声。近くのゾンビもそちらへ寄ってくる
+  if (kind === 'bullet') makeNoise(minion.position.clone(), 26, now);
+}
+
+// ミュータントの味方が跳びかかって着地した。まわりのゾンビをまとめて削る
+function minionSlam(minion, damage, radius, now) {
+  const center = minion.position.clone().setY(0);
+  effects.groundCrack(center, radius);
+  sfx.playAt('slam', minion.position);
+  net.send('fx', { k: 'crack', p: [r2(center.x), r2(center.y), r2(center.z)], r: radius });
+
+  for (const enemy of enemies) {
+    if (!enemy.active || !enemy.alive || enemy.invulnerable) continue;
+    if (enemy.position.distanceTo(center) > radius) continue;
+    damageEnemy(enemy, damage, now, null, minion.ownerId ?? net.id);
+  }
+}
+
 // 叩きつけで地面が割れる
 function smashGround(enemy) {
   const dir = new THREE.Vector3(-Math.sin(enemy.facing), 0, -Math.cos(enemy.facing));
@@ -1602,6 +1644,15 @@ function frame() {
       onAttack: (minion, target, damage) => {
         sfx.playAt('hit', minion.position, { volume: 0.7 });
         damageEnemy(target, damage, now, null, minion.ownerId ?? net.id);
+      },
+      // ガンマ・弓スケルトンの味方が撃った
+      onShoot: (minion, kind, damage, target) => minionShoot(minion, kind, damage, target, now),
+      // ミュータントの味方が跳びかかって着地した
+      onSlam: (minion, damage, radius) => minionSlam(minion, damage, radius, now),
+      // 跳ぶ前に、落ちる場所へ印を出す
+      onSlamAim: (minion, spot, radius, life) => {
+        effects.slamMarker(spot, radius, life);
+        net.send('fx', { k: 'mark', p: [r2(spot.x), r2(spot.y), r2(spot.z)], r: radius, l: life });
       },
     });
   } else {
@@ -1890,5 +1941,6 @@ addEventListener('resize', resize);
 // iOS は回転直後の innerWidth が古いままなので、少し待ってもう一度合わせる
 addEventListener('orientationchange', () => setTimeout(resize, 300));
 resize();
+
 
 
