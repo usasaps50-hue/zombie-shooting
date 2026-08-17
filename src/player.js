@@ -60,6 +60,12 @@ export class Player {
     this.hurtAt = -99;
     // 持っている武器とクラスのレベルでつくボーナス
     this.speedBonus = 0;
+    // スピアの突進。残り時間が0より大きい間は、自分では動けない
+    this.dashLeft = 0;
+    this.dashTime = 0;
+    this.dashSpeed = 0;
+    this.dashDirX = 0;
+    this.dashDirZ = 0;
     this.damageReduction = 0;
     // 拡声器でかかる、時間つきの強化
     this.buff = { until: 0, speedUp: 0, powerUp: 0, guard: 0 };
@@ -121,6 +127,22 @@ export class Player {
     this.pitch = THREE.MathUtils.clamp(this.pitch + dy, -MAX_PITCH, MAX_PITCH);
   }
 
+  // スピアの突進を始める。distance メートル先へ seconds 秒かけて飛ぶ
+  startDash(distance, seconds) {
+    if (this.downed) return false;
+    this.dashLeft = seconds;
+    this.dashTime = seconds;
+    // 見ている向き（水平だけ）へまっすぐ飛ぶ
+    this.dashDirX = -Math.sin(this.yaw);
+    this.dashDirZ = -Math.cos(this.yaw);
+    this.dashSpeed = distance / seconds;
+    return true;
+  }
+
+  get dashing() {
+    return this.dashLeft > 0;
+  }
+
   update(dt, input, colliders) {
     this.time += dt;
     // 「血の解放」中は、決まった間隔でゲージが減っていく
@@ -166,10 +188,25 @@ export class Player {
     this.speed = Math.min(len, 1) * speed;
 
     const p = this.position;
-    const stepX = p.x + mx * speed * dt;
-    if (!collides(colliders, stepX, p.y, p.z)) p.x = stepX;
-    const stepZ = p.z + mz * speed * dt;
-    if (!collides(colliders, p.x, p.y, stepZ)) p.z = stepZ;
+    if (this.dashLeft > 0) {
+      // 突進中は自分では動けない。まっすぐ飛ぶ。
+      // 最後のコマは残り時間ぶんだけ進める（そうしないと決めた距離を行き過ぎる）
+      const slice = Math.min(dt, this.dashLeft);
+      this.dashLeft = Math.max(0, this.dashLeft - dt);
+      const step = this.dashSpeed * slice;
+      const dashX = p.x + this.dashDirX * step;
+      if (!collides(colliders, dashX, p.y, p.z)) p.x = dashX;
+      else this.dashLeft = 0;
+      const dashZ = p.z + this.dashDirZ * step;
+      if (!collides(colliders, p.x, p.y, dashZ)) p.z = dashZ;
+      else this.dashLeft = 0;
+      this.speed = this.dashSpeed;
+    } else {
+      const stepX = p.x + mx * speed * dt;
+      if (!collides(colliders, stepX, p.y, p.z)) p.x = stepX;
+      const stepZ = p.z + mz * speed * dt;
+      if (!collides(colliders, p.x, p.y, stepZ)) p.z = stepZ;
+    }
 
     if (input.consumeJump() && this.onGround) {
       this.velY = JUMP_SPEED;

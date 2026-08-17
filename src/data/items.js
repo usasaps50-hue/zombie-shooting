@@ -110,6 +110,24 @@ export const ITEMS = {
     jobOnly: 'necromancer',
     icon: '💀',
   },
+  // 突進して刺す槍。攻撃するたびに前へ飛び出す
+  spear: {
+    id: 'spear',
+    name: 'スピア',
+    kind: 'dash',
+    damage: 14,
+    // 突進で飛ぶ距離（m）と、飛んでいる時間（秒）
+    dashDistance: 7.0,
+    dashTime: 0.22,
+    // 突進が終わってから、つぎに突進できるまで
+    cooldown: 0.6,
+    swingTime: 0.35,
+    // 突き刺す幅。この半径に入った敵を、通り抜けざまに刺す
+    hitRadius: 1.6,
+    noise: 4,
+    icon: '🔱',
+  },
+
   // 散らばった味方を、自分のところへ呼び集める旗の杖
   team: {
     id: 'team',
@@ -145,7 +163,7 @@ export const ITEMS = {
 };
 
 export const SELECTABLE_ITEMS = [
-  'pistol', 'ak47', 'shovel', 'megaphone', 'knife', 'reborn', 'death', 'team', 'hammer',
+  'pistol', 'ak47', 'shovel', 'megaphone', 'knife', 'spear', 'reborn', 'death', 'team', 'hammer',
 ];
 // 持てる数はクラスのレベルで変わる（progress.js の maxSlots）
 export const BASE_SLOTS = 3;

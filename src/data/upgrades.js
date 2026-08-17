@@ -61,6 +61,26 @@ export const UPGRADES = {
       { cost: 1000, gold: true, cooldown: 0.6, desc: '見た目が金色／0.6秒に1回' },
     ],
   },
+  spear: {
+    id: 'spear',
+    levels: [
+      // Lv5 で「移動速度+30%／突進の待ち0.3秒／距離1.5倍（7→10.5m）／
+      // 突進時間が半分（0.22→0.11秒）」になるように、そこへ向けて伸ばしていく
+      { desc: '基本性能（7m突進／0.22秒／突進後0.6秒で次）' },
+      { cost: 200, speedBonus: 0.1, cooldown: 0.5, dashDistance: 8.0, dashTime: 0.20, desc: '移動速度+10%／8m／0.5秒で次' },
+      { cost: 400, speedBonus: 0.2, cooldown: 0.45, dashDistance: 9.0, dashTime: 0.18, desc: '移動速度+20%／9m／0.45秒で次' },
+      { cost: 700, speedBonus: 0.25, cooldown: 0.38, dashDistance: 9.5, dashTime: 0.14, desc: '移動速度+25%／9.5m／0.38秒で次／突進が速くなる' },
+      {
+        cost: 1000,
+        gold: true,
+        speedBonus: 0.3,
+        cooldown: 0.3,
+        dashDistance: 10.5,
+        dashTime: 0.11,
+        desc: '見た目が金色／移動速度+30%／突進距離1.5倍（10.5m）／突進時間が半分／突進後0.3秒で次',
+      },
+    ],
+  },
   reborn: {
     id: 'reborn',
     levels: [
@@ -213,6 +233,9 @@ export function upgradedItem(itemId, level) {
   // チームロッド用。呼びかけの届く距離と、集まった味方を回復する割合
   if (bonus.range) item.range = bonus.range;
   if (bonus.heal) item.heal = bonus.heal;
+  // スピア用。突進で飛ぶ距離と、飛んでいる時間
+  if (bonus.dashDistance) item.dashDistance = bonus.dashDistance;
+  if (bonus.dashTime) item.dashTime = bonus.dashTime;
   // ナイフ用。振る間隔・相手のHPを削る割合・溜まる血の量
   if (bonus.cooldown) item.cooldown = bonus.cooldown;
   if (bonus.hpPercent) item.hpPercent = bonus.hpPercent;

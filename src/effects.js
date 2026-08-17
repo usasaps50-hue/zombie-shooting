@@ -455,6 +455,42 @@ export class Effects {
     });
   }
 
+  // スピアの突進。飛んだ先へ、風を切った線が何本か残る
+  dashTrail(from, yaw, distance) {
+    const dir = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const group = new THREE.Group();
+    group.position.copy(from);
+    group.quaternion.setFromUnitVectors(UP, dir.clone());
+
+    const lines = [];
+    for (let i = 0; i < 7; i++) {
+      const line = new THREE.Mesh(this.tracerGeo, new THREE.MeshBasicMaterial({
+        color: 0xdfeaf5, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide,
+      }));
+      // 進む向きに伸びる線を、まわりに散らす
+      const a = (i / 7) * Math.PI * 2;
+      const r = 0.35 + Math.random() * 0.85;
+      line.position.set(Math.sin(a) * r, 0, Math.cos(a) * r);
+      line.scale.set(1, distance * (0.5 + Math.random() * 0.5), 1);
+      lines.push({ line, delay: Math.random() * 0.25 });
+      group.add(line);
+    }
+    // 穂先が走った芯の線
+    const core = new THREE.Mesh(this.tracerGeo, new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide,
+    }));
+    core.scale.set(1.6, distance, 1.6);
+    group.add(core);
+
+    this.#add(group, 0.34, 1, 0, (p) => {
+      core.material.opacity = (1 - p) * 0.9;
+      for (const { line, delay } of lines) {
+        const t = THREE.MathUtils.clamp((p - delay) / (1 - delay), 0, 1);
+        line.material.opacity = (1 - t) * 0.7;
+      }
+    });
+  }
+
   // ボスの衝撃波。地面を走る輪。高い所に登れば当たらないので、
   // 「地面すれすれを走っている」と分かる見た目にする
   shockwave(position, radius, life) {

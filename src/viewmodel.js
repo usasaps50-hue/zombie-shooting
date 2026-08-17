@@ -152,6 +152,35 @@ export function createItemMesh(id, gold = false, silencer = false) {
       core.scale.setScalar(0.45);
       halo.scale.setScalar(0.8);
     }
+  } else if (id === 'spear') {
+    // 長い柄の先に細い穂先。突き出す動きが映えるよう、前へ長く伸ばす
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.03, 1.5, 8), mat(0x6b5030, 0.9));
+    shaft.rotation.x = Math.PI / 2;
+    shaft.position.set(0, 0, -0.15);
+    // 柄に巻いた革。握りの位置が分かる
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.26, 8), mat(0x3a2f26, 0.95));
+    grip.rotation.x = Math.PI / 2;
+    grip.position.set(0, 0, 0.28);
+    // 穂先。四角錐を寝かせて尖らせる
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.34, 4), mat(0xc9d2da, 0.25));
+    tip.rotation.set(-Math.PI / 2, 0, Math.PI / 4);
+    tip.position.set(0, 0, -1.06);
+    // 穂先の付け根の金具と、左右に張り出した鉤
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.1, 8), mat(0x8d949d, 0.4));
+    collar.rotation.x = Math.PI / 2;
+    collar.position.set(0, 0, -0.86);
+    const barbs = [];
+    for (const side of [-1, 1]) {
+      const barb = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.02, 0.1), mat(0x8d949d, 0.4));
+      barb.position.set(side * 0.09, 0, -0.83);
+      barb.rotation.z = side * 0.5;
+      barbs.push(barb);
+    }
+    // 石突き
+    const butt = new THREE.Mesh(new THREE.ConeGeometry(0.034, 0.1, 6), mat(0x8d949d, 0.4));
+    butt.rotation.x = -Math.PI / 2;
+    butt.position.set(0, 0, 0.6);
+    g.add(shaft, grip, tip, collar, butt, ...barbs);
   } else if (id === 'team') {
     // 旗の付いた杖。振って味方を呼び集める
     const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.03, 0.95, 8), mat(0x5b4630, 0.9));
@@ -264,11 +293,15 @@ export class ViewModel {
     const m = this.current;
     const sway = moveAmount * 0.02;
 
+    const speared = this.itemId === 'spear';
     const flagged = this.itemId === 'team';
     const longHandled = this.itemId === 'shovel' || this.itemId === 'hammer'
       || this.itemId === 'reborn' || this.itemId === 'death' || flagged;
     // チームロッドは旗が見どころなので、立てて持って旗を画面に入れる
-    const base = flagged
+    const base = speared
+      // 槍は前へ構える。突き出す動きが分かるよう、まっすぐ前を向かせる
+      ? { pos: new THREE.Vector3(0.3, -0.3, -0.5), rot: new THREE.Euler(0.05, -0.1, 0.06) }
+      : flagged
       ? { pos: new THREE.Vector3(0.52, -0.5, -0.85), rot: new THREE.Euler(0.24, -0.5, 0.46) }
       : longHandled
         ? { pos: new THREE.Vector3(0.45, -0.5, -0.8), rot: new THREE.Euler(2.7, -0.3, 0.7) }
@@ -277,7 +310,7 @@ export class ViewModel {
     // 縦画面は水平画角が狭いので、武器を内側・下・小さめに寄せて画面内に収める
     const narrow = THREE.MathUtils.clamp(this.camera.aspect / 1.6, 0.45, 1);
     base.pos.x *= narrow;
-    m.scale.setScalar((flagged ? 0.34 : longHandled ? 0.5 : 1) * (0.6 + narrow * 0.4));
+    m.scale.setScalar((speared ? 0.75 : flagged ? 0.34 : longHandled ? 0.5 : 1) * (0.6 + narrow * 0.4));
 
     // 構えているときは、銃を画面の真ん中へ寄せて構え直す
     if (this.aim && !longHandled) {
@@ -338,6 +371,16 @@ export class ViewModel {
       for (const o of m.children) {
         if (o.name === 'lamp') o.scale.setScalar(glow);
       }
+    } else if (name === 'thrust') {
+      // スピア：いったん引いてから、勢いよく前へ突き出す
+      const pull = smooth(phase(t, 0, 0.18));
+      const push = smooth(phase(t, 0.18, 0.42));
+      const back = smooth(phase(t, 0.5, 1));
+      const out = push - back;
+      m.position.z += pull * 0.22 - out * 0.75;
+      m.position.y += pull * 0.06 - out * 0.05;
+      m.position.x -= out * 0.08;
+      m.rotation.x += pull * 0.2 - out * 0.12;
     } else if (name === 'rally') {
       // チームロッド：旗を高く掲げて、左右に大きく振る
       const raise = smooth(phase(t, 0, 0.3));

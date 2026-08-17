@@ -132,9 +132,9 @@ const FOV_AIM = 42;
 
 // HUDと店で使う武器アイコン。実際の3Dモデルを描いた画像（金色版も作っておく）
 const ITEM_ICONS = makeItemIcons([
-  'pistol', 'ak47', 'shovel', 'hammer', 'bandage', 'megaphone', 'knife', 'reborn', 'death', 'team',
+  'pistol', 'ak47', 'shovel', 'hammer', 'bandage', 'megaphone', 'knife', 'reborn', 'death', 'team', 'spear',
   'pistol:gold', 'ak47:gold', 'shovel:gold', 'megaphone:gold', 'knife:gold',
-  'reborn:gold', 'death:gold', 'team:gold',
+  'reborn:gold', 'death:gold', 'team:gold', 'spear:gold',
 ]);
 hud.setIcons(ITEM_ICONS);
 
@@ -345,6 +345,7 @@ document.getElementById('btn-tohub').addEventListener('click', () => {
   drones.clear();
   builder.clear();
   shockwaves.length = 0;
+  dashState = null;
   playerBody.setVisible(false);
   enterHub();
 });
@@ -394,6 +395,7 @@ function onWeaponEvent(ev) {
   else if (ev.type === 'build') return build();
   else if (ev.type === 'buff') return useMegaphone(ev.item);
   else if (ev.type === 'summon') return useTeamRod(ev.item);
+  else if (ev.type === 'dash') return spearDash(ev.item);
   else if (ev.type === 'cast') return castRod(ev.item);
   else if (ev.type === 'cycleBuild') {
     const def = builder.cycleType(1);
@@ -876,6 +878,9 @@ function setupNet() {
     } else if (msg.k === 'mark') {
       effects.slamMarker(at, msg.r, msg.l);
       sfx.playAt('growl', at, { volume: 1.4 });
+    } else if (msg.k === 'dash') {
+      effects.dashTrail(at, msg.y, msg.d);
+      sfx.playAt('dash', at, { volume: 0.8 });
     } else if (msg.k === 'wave') {
       effects.shockwave(at, TITAN.waveRange, TITAN.waveRange / TITAN.waveSpeed);
       sfx.playAt('quake', at);
@@ -1201,6 +1206,54 @@ function healAround(hospital, dt) {
   if (!game || paused || game.player.downed) return;
   const p = game.player.position;
   if (Math.hypot(p.x - center.x, p.z - center.z) <= HOSPITAL.radius) game.player.heal(amount);
+}
+
+// ---- スピア ----
+// 突進の間ずっと、通り抜けた敵を刺していく。同じ敵は1回の突進で1度だけ
+let dashState = null;
+
+function spearDash(item) {
+  const { player } = game;
+  if (player.downed || player.dashing) return false;
+  if (!player.startDash(item.dashDistance, item.dashTime)) return false;
+
+  dashState = { item, hit: new Set(), left: item.dashTime };
+  sfx.play('dash');
+  effects.dashTrail(camera.position.clone(), player.yaw, item.dashDistance);
+  makeNoise(camera.position.clone(), item.noise ?? 0, performance.now() / 1000);
+  net.send('fx', {
+    k: 'dash',
+    p: [r2(camera.position.x), r2(camera.position.y), r2(camera.position.z)],
+    y: r2(player.yaw), d: item.dashDistance,
+  });
+  return true;
+}
+
+// 突進している間、体が触れた敵を刺す
+function updateDash(dt, now) {
+  if (!dashState || !game) return;
+  const { player } = game;
+  const { item } = dashState;
+
+  for (const enemy of enemies) {
+    if (!enemy.alive || dashState.hit.has(enemy)) continue;
+    const to = enemy.position.clone().sub(player.position);
+    to.y = 0;
+    if (to.length() > item.hitRadius + (enemy.def.height > 3 ? 1.4 : 0)) continue;
+    dashState.hit.add(enemy);
+    damageEnemy(enemy, item.damage, now, item);
+    enemy.knockback(to, SHOVEL_KNOCKBACK * 1.3);
+    effects.headshot(enemy.position.clone().setY(enemy.position.y + enemy.def.height * 0.6));
+    sfx.play('hit');
+  }
+
+  dashState.left -= dt;
+  // 突進が終わった。ここから「つぎに突進できるまで」を数えはじめる
+  if (!player.dashing || dashState.left <= 0) {
+    game.weapons.setCooldown(item.cooldown);
+    if (dashState.hit.size) hud.setToast(`スピア　${dashState.hit.size}体を貫いた`, 0.9);
+    dashState = null;
+  }
 }
 
 function swing(item) {
@@ -1900,6 +1953,8 @@ function frame() {
     player.update(dt, input, colliders);
     if (!player.downed) player.applyToCamera(camera);
     weapons.update(dt);
+    // スピアの突進中は、通り抜けた敵を刺していく
+    updateDash(dt, now);
 
     ult.tick(dt);
     // 親（かオフライン）だけがドローンを動かす。子は届いた位置になじませるだけ
@@ -1992,7 +2047,7 @@ function frame() {
       coins: progress.coins,
       waves: waveInfo(),
       buff: player.buffed ? { text: buffText(player.buff), left: player.buffLeft } : null,
-      cooldown: ['buff', 'summon'].includes(weapons.current?.kind) ? weapons.cooldownLeft() : 0,
+      cooldown: ['buff', 'summon', 'dash'].includes(weapons.current?.kind) ? weapons.cooldownLeft() : 0,
       blood: game.skill?.kind === 'bloodRelease'
         ? { value: player.blood, max: BLOOD.max, speedAtMax: BLOOD.speedAtMax, releasing: player.releasing }
         : null,
@@ -2153,6 +2208,7 @@ addEventListener('resize', resize);
 // iOS は回転直後の innerWidth が古いままなので、少し待ってもう一度合わせる
 addEventListener('orientationchange', () => setTimeout(resize, 300));
 resize();
+
 
 
 

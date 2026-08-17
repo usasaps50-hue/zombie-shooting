@@ -260,6 +260,14 @@ class Sfx {
         this.#tone('sine', 520, 780, at, 0.38, gain);
         break;
 
+      // スピアの突進。風を切る短い音
+      case 'dash': {
+        this.#env(gain, at, 0.006, 0.22, 0.55 * v);
+        this.#tone('sawtooth', 520, 1500, at, 0.16, gain);
+        this.#noiseSource(at, 0.22, gain, { type: 'bandpass', from: 900, to: 3200, q: 2 });
+        break;
+      }
+
       // ボスの咆哮。低くうなってから、割れた高音がのしかかる
       case 'roar': {
         this.#env(gain, at, 0.06, 1.5, 1.0 * v);

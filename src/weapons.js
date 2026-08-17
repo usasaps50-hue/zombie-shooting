@@ -69,6 +69,11 @@ export class Weapons {
       st.readyAt = this.time + item.cooldown;
       this.#play('swing', item.swingTime);
       this.onEvent({ type: 'swing', item });
+    } else if (item.kind === 'dash') {
+      // スピア。突進できなかったときは待ち時間を入れない。
+      // 「次に突進できるまで」は、突進が終わってから数えたいので main 側で決める
+      if (this.onEvent({ type: 'dash', item }) === false) return;
+      this.#play('thrust', item.swingTime);
     } else if (item.kind === 'build') {
       // 建てられなかったら硬直させない
       if (this.onEvent({ type: 'build', item }) === false) return;
@@ -90,6 +95,12 @@ export class Weapons {
       st.readyAt = this.time + item.cooldown;
       this.#play('shout', item.swingTime);
     }
+  }
+
+  // 外から待ち時間を決める（スピアのように「動作が終わってから数える」武器用）
+  setCooldown(seconds) {
+    const st = this.currentState;
+    if (st) st.readyAt = this.time + seconds;
   }
 
   // いまの武器があと何秒で使えるようになるか（0 なら使える）

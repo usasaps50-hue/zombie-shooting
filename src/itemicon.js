@@ -10,6 +10,7 @@ const POSE = {
   bandage: [0.5, 0.4, 0],
   megaphone: [0.18, -Math.PI / 2 - 0.5, 0],
   team: [0.1, 0.5, 0.6],
+  spear: [0.25, -Math.PI / 2 - 0.35, 0],
   knife: [0.15, -Math.PI / 2 - 0.4, 0.5],
   reborn: [0.1, 0.4, 0.6],
   death: [0.1, 0.4, 0.6],
