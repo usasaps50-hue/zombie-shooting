@@ -178,8 +178,9 @@ body.hub #wave { display: none; }
 .hold-bar { height: 4px; background: #2a323d; border-radius: 2px; margin-top: 8px; overflow: hidden; }
 #hold-fill { height: 100%; width: 0; background: #6fa8dc; }
 
+/* ボスのHPバーと重ならないよう、知らせは少し下に出す */
 #toast {
-  position: absolute; left: 50%; top: 16%; transform: translateX(-50%);
+  position: absolute; left: 50%; top: 27%; transform: translateX(-50%);
   background: rgba(12, 16, 22, .8); padding: 8px 16px; border-radius: 8px; font-size: 14px;
 }
 
@@ -433,3 +434,32 @@ body.touch #build-info { bottom: calc(62px + var(--safe-b)); font-size: 12px; }
 body:not(.hub) #chat { display: none; }
 body.touch #chat { width: min(300px, 40vw); }
 body.touch #chat-log li { font-size: 12px; }
+
+
+/* ---------- ボスのHPバー（画面上） ---------- */
+#boss {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  top: calc(46px + var(--safe-t)); width: min(520px, 78vw); text-align: center;
+  pointer-events: none;
+}
+#boss-name {
+  font-size: 15px; font-weight: 700; letter-spacing: .08em; color: #ffcf7a;
+  text-shadow: 0 2px 6px #000; margin-bottom: 4px;
+}
+.boss-track {
+  height: 14px; background: rgba(8, 10, 14, .8); border: 1px solid #6b5a3a;
+  border-radius: 7px; overflow: hidden;
+}
+#boss-fill {
+  height: 100%; width: 100%; transition: width .18s;
+  background: linear-gradient(90deg, #8a2b1e, #e0562a, #ffa83a);
+}
+/* 装甲が残っている間は、まだ本体を削れないと分かる色にする */
+#boss.armored #boss-fill { background: linear-gradient(90deg, #3f4652, #6b7583, #97a3b3); }
+#boss.rage .boss-track { box-shadow: 0 0 12px rgba(255, 90, 40, .9); }
+#boss-phase {
+  margin-top: 4px; font-size: 11px; color: #d7c9a8; text-shadow: 0 1px 3px #000;
+}
+body.touch #boss { top: calc(36px + var(--safe-t)); width: min(420px, 62vw); }
+body.touch #boss-name { font-size: 13px; }
+body.touch .boss-track { height: 11px; }

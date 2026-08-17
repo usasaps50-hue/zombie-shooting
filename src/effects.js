@@ -455,6 +455,125 @@ export class Effects {
     });
   }
 
+  // ボスの衝撃波。地面を走る輪。高い所に登れば当たらないので、
+  // 「地面すれすれを走っている」と分かる見た目にする
+  shockwave(position, radius, life) {
+    const group = new THREE.Group();
+    group.position.set(position.x, position.y + 0.05, position.z);
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.86, 1, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0xffb03a, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide,
+      })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    // 内側の薄い塗り。押し寄せてくる感じを出す
+    const fill = new THREE.Mesh(
+      new THREE.RingGeometry(0.6, 1, 48),
+      new THREE.MeshBasicMaterial({
+        color: 0xff6a2a, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide,
+      })
+    );
+    fill.rotation.x = -Math.PI / 2;
+    // 舞い上がる砂ぼこりの壁
+    const dust = new THREE.Mesh(
+      new THREE.CylinderGeometry(1, 1, 1.1, 30, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xbfae86, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide,
+      })
+    );
+    dust.position.y = 0.55;
+
+    group.add(ring, fill, dust);
+    this.#add(group, life, 1, 0, (p) => {
+      const r = Math.max(0.4, radius * p);
+      ring.scale.setScalar(r);
+      fill.scale.setScalar(r);
+      dust.scale.set(r, 1, r);
+      const fade = 1 - p * p;
+      ring.material.opacity = fade * 0.95;
+      fill.material.opacity = fade * 0.28;
+      dust.material.opacity = fade * 0.26;
+    });
+  }
+
+  // ボスの音波ビーム。壁を貫通するので、まっすぐな帯として描く
+  sonicBeam(from, to, halfWidth) {
+    const dir = to.clone().sub(from);
+    const len = dir.length();
+    if (len < 0.01) return;
+    const group = new THREE.Group();
+    group.position.copy(from);
+    group.quaternion.setFromUnitVectors(UP, dir.divideScalar(len));
+
+    // 芯と、そのまわりの薄い衣の二重にして、太く見せる
+    const make = (r, color, opacity) => {
+      const mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(r, r * 1.35, len, 12, 1, true),
+        new THREE.MeshBasicMaterial({
+          color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide,
+        })
+      );
+      mesh.position.y = len / 2;
+      return mesh;
+    };
+    const core = make(halfWidth * 0.35, 0xfff0c0, 0.95);
+    const shell = make(halfWidth, 0xff8a2a, 0.4);
+    // 口元の炸裂
+    const burst = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(halfWidth * 1.2, 0),
+      new THREE.MeshBasicMaterial({ color: 0xffd08a, transparent: true, depthWrite: false })
+    );
+
+    group.add(core, shell, burst);
+    this.#add(group, 0.42, 1, 0, (p) => {
+      const fade = 1 - p;
+      core.material.opacity = fade * 0.95;
+      shell.material.opacity = fade * 0.4;
+      // 撃った直後が一番太く、すっと細くなる
+      const w = 1 + (1 - fade) * 0.6;
+      core.scale.set(w, 1, w);
+      shell.scale.set(w * (1 + p), 1, w * (1 + p));
+      burst.scale.setScalar(1 + p * 2.5);
+      burst.material.opacity = fade * 0.9;
+    });
+  }
+
+  // 装甲が割れて、破片が飛び散る
+  plateBreak(position) {
+    const group = new THREE.Group();
+    group.position.copy(position);
+    const shards = [];
+    for (let i = 0; i < 10; i++) {
+      const shard = new THREE.Mesh(
+        new THREE.BoxGeometry(0.25 + Math.random() * 0.3, 0.1, 0.25 + Math.random() * 0.3),
+        new THREE.MeshBasicMaterial({ color: 0x6b7078, transparent: true, depthWrite: false })
+      );
+      const angle = (i / 10) * Math.PI * 2 + Math.random();
+      shards.push({
+        shard, angle,
+        out: 1.2 + Math.random() * 1.8,
+        up: 1.4 + Math.random() * 1.6,
+        spin: (Math.random() - 0.5) * 12,
+      });
+      group.add(shard);
+    }
+    this.#add(group, 0.9, 1, 0, (p) => {
+      for (const s of shards) {
+        const r = s.out * p;
+        // 放物線。上がってから落ちる
+        s.shard.position.set(
+          Math.sin(s.angle) * r,
+          s.up * p - 9.8 * 0.5 * (p * 0.9) ** 2,
+          Math.cos(s.angle) * r
+        );
+        s.shard.rotation.set(s.spin * p, s.spin * p * 0.7, 0);
+        s.shard.material.opacity = 1 - p * p;
+      }
+    });
+  }
+
   // チームロッドの召集。緑の輪が広がって、旗の光が立ちのぼる
   rally(position, radius) {
     const flat = (geometry, color, opacity) => {

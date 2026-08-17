@@ -260,6 +260,44 @@ class Sfx {
         this.#tone('sine', 520, 780, at, 0.38, gain);
         break;
 
+      // ボスの咆哮。低くうなってから、割れた高音がのしかかる
+      case 'roar': {
+        this.#env(gain, at, 0.06, 1.5, 1.0 * v);
+        this.#tone('sawtooth', 62, 44, at, 1.5, gain);
+        this.#env(gain, at + 0.1, 0.08, 1.2, 0.7 * v);
+        this.#tone('square', 108, 70, at + 0.1, 1.2, gain);
+        this.#noiseSource(at + 0.05, 1.3, gain, { from: 900, to: 200 });
+        break;
+      }
+      // 装甲が割れる。金属がはじけて破片が散る
+      case 'plate': {
+        this.#env(gain, at, 0.002, 0.3, 0.8 * v);
+        this.#tone('square', 1500, 420, at, 0.12, gain);
+        this.#noiseSource(at, 0.35, gain, { from: 4200, to: 900 });
+        break;
+      }
+      // ボスの踏みつけ・着地。地面が揺れる重い音
+      case 'quake': {
+        this.#env(gain, at, 0.005, 0.9, 1.0 * v);
+        this.#tone('sine', 92, 30, at, 0.9, gain);
+        this.#noiseSource(at, 0.7, gain, { from: 600, to: 90 });
+        break;
+      }
+      // ビームの溜め。だんだん高くなって不安をあおる
+      case 'charge': {
+        this.#env(gain, at, 0.4, 1.5, 0.55 * v);
+        this.#tone('sawtooth', 120, 900, at, 1.5, gain);
+        break;
+      }
+      // ビームの発射。壁を貫く音波
+      case 'beam': {
+        this.#env(gain, at, 0.004, 0.7, 0.95 * v);
+        this.#tone('sawtooth', 1400, 180, at, 0.7, gain);
+        this.#tone('square', 700, 90, at, 0.7, gain);
+        this.#noiseSource(at, 0.5, gain, { from: 3000, to: 400 });
+        break;
+      }
+
       // チームロッドの召集。角笛のような呼びかけ
       case 'rally': {
         this.#env(gain, at, 0.02, 0.5, 0.7 * v);

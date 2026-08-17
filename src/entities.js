@@ -3,6 +3,8 @@ import { Avatar } from './avatar.js';
 import { Zombie } from './zombie.js';
 import { Mutant } from './mutant.js';
 import { Skeleton } from './skeleton.js';
+import { Titan } from './titan.js';
+import { TitanBrain } from './boss.js';
 import { ENEMIES, JOBS, BUILD_LURE } from './data/jobs.js';
 import { floorHeight, STEP_HEIGHT, STEP_SLACK, EYE_HEIGHT } from './player.js';
 import { makeLabel, hpColor } from './label.js';
@@ -206,7 +208,9 @@ export class Enemy {
       this.root.remove(this.zombie.root);
       this.zombie.dispose?.();
     }
-    if (this.def.model === 'mutant') {
+    if (this.def.model === 'titan') {
+      this.zombie = new Titan();
+    } else if (this.def.model === 'mutant') {
       this.zombie = new Mutant(this.def.armor);
     } else if (this.def.model === 'skeleton') {
       this.zombie = new Skeleton({ weapon: this.def.weapon });
@@ -231,6 +235,13 @@ export class Enemy {
     if (this.def.id !== typeId) {
       this.def = ENEMIES[typeId];
       this.#buildModel();
+    }
+    // ボスは専用の頭を持つ。ふつうの敵に戻ったら外す
+    if (this.def.boss) {
+      this.boss ??= new TitanBrain(this);
+      this.boss.reset();
+    } else {
+      this.boss = null;
     }
     this.maxHp = Math.round(this.def.hp * hpScale);
     this.home.copy(position);
@@ -264,12 +275,15 @@ export class Enemy {
 
   // 溜め中・ジャンプ中・地中・復活中は攻撃が通らない
   get invulnerable() {
+    if (this.boss) return this.boss.invulnerable;
     return this.state === 'slam' || this.state === 'charge'
       || this.state === 'burrow' || this.state === 'under' || this.state === 'emerge'
       || this.state === 'reviving';
   }
 
-  hit(damage, now) {
+  // part は撃たれた場所。ボスのときだけ意味がある（装甲の番号か 'core'）
+  hit(damage, now, part = null) {
+    if (this.boss) return this.boss.hit(damage, now, part);
     if (!this.alive || this.invulnerable) return false;
     this.hp = Math.max(0, this.hp - damage);
     this.#refresh();
@@ -448,6 +462,12 @@ export class Enemy {
     } = world;
     // オンラインでは何人もいる。そのつど一番近い相手を狙う
     const player = nearestPlayer(players, this.root.position);
+
+    // ボスは考えかたがまったく違うので、専用の頭にまかせる
+    if (this.boss) {
+      this.boss.update(dt, now, { ...world, target: player });
+      return;
+    }
 
     if (this.state === 'charge') {
       this.#charge(dt);
@@ -955,6 +975,28 @@ export class Enemy {
 
   #refresh() {
     this.label.draw(`${this.hp} / ${this.maxHp}`, hpColor(this.hp, this.maxHp));
+  }
+
+  // ボスから呼ぶ用（#refresh は外から呼べないため）
+  refreshLabel() {
+    this.#refresh();
+  }
+
+  // 弾を当てられる部分。ふつうの敵は体ひとつ、ボスは装甲と核
+  hitTargets() {
+    if (this.boss) return [this.hitbox, ...this.zombie.hitTargets()];
+    return [this.hitbox];
+  }
+
+  // 撃たれた物が自分のどこかを返す。自分のものでなければ undefined
+  partOf(object) {
+    if (object === this.hitbox) return null;
+    if (this.boss) return this.zombie.partOf(object);
+    return undefined;
+  }
+
+  owns(object) {
+    return object === this.hitbox || (this.boss && this.zombie.partOf(object) !== null);
   }
 
   // ---- ここから下はオンライン用 ----

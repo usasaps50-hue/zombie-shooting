@@ -9,9 +9,24 @@ export const WAVE = {
   clearCoins: 10,
 };
 
-// 1ウェーブ5体から、1ウェーブごとに5体ずつ増える
+// 10ウェーブごとにボスが出る
+export const BOSS_EVERY = 10;
+export const BOSS_ID = 'titan';
+
+export function isBossWave(wave) {
+  return wave > 0 && wave % BOSS_EVERY === 0;
+}
+
+// 1ウェーブ5体から、1ウェーブごとに5体ずつ増える。
+// ボスの回は、ボス1体＋おともだけにして数を絞る
 export function waveCount(wave) {
+  if (isBossWave(wave)) return 1 + 12;
   return 5 * wave;
+}
+
+// ボスのHPもウェーブに合わせて増やす。ただし雑魚ほどは伸ばさない
+export function bossHpScale(wave) {
+  return 1 + 0.35 * (Math.floor(wave / BOSS_EVERY) - 1);
 }
 
 // 5ウェーブごとに、ゾンビのHPが元の50%ずつ増える

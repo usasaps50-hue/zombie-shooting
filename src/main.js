@@ -13,7 +13,7 @@ import {
   upgradedItem, MAX_LEVEL, ROLLING_SMASH, HEADSHOT, buffOf, buffText, BLOOD, knifeDamage,
 } from './data/upgrades.js';
 import { Waves } from './waves.js';
-import { WAVE } from './data/waves.js';
+import { WAVE, pickType, hpScale } from './data/waves.js';
 import { progress, levelOf, addCoins, classBonus, maxSlots, playerName } from './progress.js';
 import { Teammate, Enemy } from './entities.js';
 import { Net, Ticker } from './net.js';
@@ -35,6 +35,7 @@ import { ARMOR_GUN_REDUCTION } from './data/classes.js';
 import { IS_TOUCH, QUALITY } from './device.js';
 import { sfx } from './audio.js';
 import { Minions, MINION } from './minion.js';
+import { Shockwave, TITAN } from './boss.js';
 import { Chat, cleanText } from './chat.js';
 
 const canvas = document.getElementById('game');
@@ -87,6 +88,7 @@ const waves = new Waves(enemies, spawns, {
     sfx.play('wave');
     hud.setToast(`ウェーブ ${wave} — ゾンビ ${count} 体`, 2.6);
   },
+  onBossSpawn: (boss) => setupBoss(boss),
   onWaveClear: (wave) => {
     addCoins(WAVE.clearCoins);
     if (game) game.coins += WAVE.clearCoins;
@@ -342,6 +344,7 @@ document.getElementById('btn-tohub').addEventListener('click', () => {
   minions.clear();
   drones.clear();
   builder.clear();
+  shockwaves.length = 0;
   playerBody.setVisible(false);
   enterHub();
 });
@@ -613,7 +616,7 @@ function awardKill(def, source, mine = true) {
 
 // source はダメージを出した武器。レベルの特典はこれで判定する。
 // by は「誰が当てたか」。オンラインでは、この人がコインと素材をもらう
-function damageEnemy(enemy, amount, now, source = null, by = net.id) {
+function damageEnemy(enemy, amount, now, source = null, by = net.id, part = null) {
   // 拡声器がかかっている間は、自分の攻撃だけ威力が上がる
   if (by === net.id && game && source) amount *= game.player.powerScale;
   // 装甲を着たゾンビは、銃とタレットの弾が通りにくい
@@ -639,7 +642,7 @@ function damageEnemy(enemy, amount, now, source = null, by = net.id) {
 
   const dealt = Math.min(amount, enemy.hp);
   // ジャンプ中など、当たらないこともある
-  if (!enemy.hit(amount, now)) return false;
+  if (!enemy.hit(amount, now, part)) return false;
 
   const mine = by === net.id;
   if (mine) {
@@ -871,6 +874,12 @@ function setupNet() {
     } else if (msg.k === 'mark') {
       effects.slamMarker(at, msg.r, msg.l);
       sfx.playAt('growl', at, { volume: 1.4 });
+    } else if (msg.k === 'wave') {
+      effects.shockwave(at, TITAN.waveRange, TITAN.waveRange / TITAN.waveSpeed);
+      sfx.playAt('quake', at);
+    } else if (msg.k === 'beam') {
+      effects.sonicBeam(at, new THREE.Vector3(...msg.q), TITAN.beamHalfWidth);
+      sfx.playAt('beam', at, { volume: 1.2 });
     } else if (msg.k === 'shot') {
       // 味方（ガンマ・弓スケルトン）が撃った光の筋
       const to = new THREE.Vector3(...msg.q);
@@ -975,7 +984,8 @@ function shoot(item) {
   muzzle.intensity = item.effects?.silencer ? 4 : 12;
   raycaster.set(camera.position, dir);
   raycaster.far = item.range;
-  const hitboxes = enemies.filter((e) => e.alive).map((e) => e.hitbox);
+  // ボスは装甲と核を別々に撃てるので、当たり判定を複数持っている
+  const hitboxes = enemies.filter((e) => e.alive).flatMap((e) => e.hitTargets());
   const hit = raycaster.intersectObjects(hitboxes, false)[0];
   const end = hit ? hit.point : camera.position.clone().addScaledVector(dir, item.range);
   const from = muzzleOrigin(dir);
@@ -985,17 +995,27 @@ function shoot(item) {
   makeNoise(camera.position.clone(), item.noise ?? 0, now);
 
   if (!hit) return;
-  const enemy = enemies.find((e) => e.hitbox === hit.object);
-  // 当たった高さが頭の位置なら、ヘッドショット
-  const head = hit.point.y - enemy.position.y >= enemy.def.height * HEADSHOT.from;
+  const enemy = enemies.find((e) => e.owns(hit.object));
+  if (!enemy) return;
+  const part = enemy.partOf(hit.object);
+  // 装甲や核を撃ったときは、ヘッドショット扱いにしない
+  const head = part === null
+    && hit.point.y - enemy.position.y >= enemy.def.height * HEADSHOT.from;
   const damage = head ? Math.round(item.damage * HEADSHOT.multiplier) : item.damage;
   if (head) {
     effects.headshot(hit.point);
     sfx.play('headshot');
   }
+  if (part === 'core') {
+    effects.headshot(hit.point);
+    sfx.play('headshot');
+  }
   // 倒したときの表示は damageEnemy 側が出す
-  if (!damageEnemy(enemy, damage, now, item)) {
-    hud.setToast(head ? `ヘッドショット！ -${damage}` : `ヒット -${damage}`, 0.8);
+  if (!damageEnemy(enemy, damage, now, item, net.id, part)) {
+    const label = part === 'core' ? '核にヒット！'
+      : typeof part === 'number' ? '装甲にヒット'
+        : head ? 'ヘッドショット！' : 'ヒット';
+    hud.setToast(`${label} -${damage}`, 0.8);
   }
 }
 
@@ -1365,6 +1385,120 @@ function minionSlam(minion, damage, radius, now) {
   }
 }
 
+// ---- ボス「タイタン」 ----
+
+// いま動いている衝撃波。地面を輪になって広がっていく
+const shockwaves = [];
+
+// 衝撃波が当たりうる相手を集める。y は「立っている高さ」で、
+// 高い所（足場・車の上）にいれば地面を走る波は当たらない
+function waveTargets() {
+  const list = [];
+  if (game && !paused && !game.player.downed) {
+    const p = game.player.position;
+    list.push({ key: 'me', x: p.x, y: p.y - EYE_HEIGHT, z: p.z, kind: 'player' });
+  }
+  for (const s of builder.structures) {
+    if (s.alive) list.push({ key: `s${s.key}`, x: s.root.position.x, y: s.root.position.y, z: s.root.position.z, kind: 'structure', ref: s });
+  }
+  for (const m of minions.list) {
+    if (m.alive) list.push({ key: `m${m.id ?? minions.list.indexOf(m)}`, x: m.position.x, y: m.position.y, z: m.position.z, kind: 'minion', ref: m });
+  }
+  return list;
+}
+
+function spawnShockwave(from, damage) {
+  const center = from.position.clone().setY(0);
+  effects.shockwave(center, TITAN.waveRange, TITAN.waveRange / TITAN.waveSpeed);
+  sfx.playAt('quake', from.position);
+  net.send('fx', { k: 'wave', p: [r2(center.x), r2(center.y), r2(center.z)] });
+  if (!net.isHost && net.online) return;
+  shockwaves.push(new Shockwave(center, damage, (t, dmg) => {
+    if (t.kind === 'player') applyDamage(dmg);
+    else if (t.kind === 'structure') t.ref.damage(dmg);
+    else if (t.kind === 'minion') t.ref.damage(dmg);
+  }));
+}
+
+// 音波ビーム。壁を貫くので、まっすぐな帯に入っているかだけで判定する
+function titanBeam(boss, damage) {
+  const from = boss.zombie.mouthPoint(new THREE.Vector3());
+  const dir = new THREE.Vector3(-Math.sin(boss.facing), 0, -Math.cos(boss.facing));
+  const to = from.clone().addScaledVector(dir, TITAN.beamRange);
+  effects.sonicBeam(from, to, TITAN.beamHalfWidth);
+  sfx.playAt('beam', boss.position, { volume: 1.2 });
+  net.send('fx', {
+    k: 'beam',
+    p: [r2(from.x), r2(from.y), r2(from.z)],
+    q: [r2(to.x), r2(to.y), r2(to.z)],
+  });
+  if (net.online && !net.isHost) return;
+
+  // 帯の中にいるかどうか。横に避ければかわせる
+  const hitsLine = (px, py, pz) => {
+    tmpVec.set(px - from.x, 0, pz - from.z);
+    const along = tmpVec.dot(dir);
+    if (along < 0 || along > TITAN.beamRange) return false;
+    const side = Math.hypot(tmpVec.x - dir.x * along, tmpVec.z - dir.z * along);
+    return side <= TITAN.beamHalfWidth;
+  };
+  if (game && !paused && !game.player.downed) {
+    const p = game.player.position;
+    if (hitsLine(p.x, p.y, p.z)) applyDamage(damage);
+  }
+  for (const s of builder.structures) {
+    if (s.alive && hitsLine(s.root.position.x, s.root.position.y, s.root.position.z)) s.damage(damage);
+  }
+  for (const m of minions.list) {
+    if (m.alive && hitsLine(m.position.x, m.position.y, m.position.z)) m.damage(damage);
+  }
+}
+
+const tmpVec = new THREE.Vector3();
+
+// ボスが湧いたとき。攻撃の受け口をつなぐ
+function setupBoss(boss) {
+  const brain = boss.boss;
+  if (!brain) return;
+  hud.setToast(`⚠ ${boss.def.name} が現れた！　まずは光る装甲4枚をこわせ`, 4.5);
+  sfx.playAt('roar', boss.position, { volume: 1.4 });
+
+  brain.onPlateBroken = (b, index, left) => {
+    const at = b.zombie.plates[index].getWorldPosition(new THREE.Vector3());
+    effects.plateBreak(at);
+    sfx.playAt('plate', at, { volume: 1.1 });
+    hud.setToast(left > 0 ? `装甲をこわした！ 残り${left}枚` : '装甲が全部はがれた！', 2.2);
+  };
+  brain.onRoar = (b) => {
+    sfx.playAt('roar', b.position, { volume: 1.4 });
+    effects.shout(b.position.clone().setY(b.position.y + b.def.height * 0.8), 9);
+  };
+  brain.onPhase = (b, phase) => {
+    if (phase === 2) hud.setToast('胸の核が出た！ そこが弱点だ', 3.2);
+    else hud.setToast('⚠ タイタンが荒れ狂う！ 衝撃波は高い所へ、ビームは横に避けろ', 4);
+  };
+  brain.onGrab = (b, prey) => {
+    sfx.playAt('zswing', b.position, { volume: 1.1 });
+  };
+  brain.onBeamCharge = (b) => {
+    sfx.playAt('charge', b.position, { volume: 1.2 });
+  };
+  brain.onJumpLand = (b, damage, radius) => {
+    slam(b, damage, radius, performance.now() / 1000);
+  };
+  brain.onSummon = (b, count) => summonForBoss(count);
+}
+
+// ボスが呼ぶ雑魚。トンネルから湧かせる
+function summonForBoss(count) {
+  for (let i = 0; i < count; i++) {
+    const slot = enemies.find((e) => !e.active);
+    if (!slot) break;
+    const mouth = spawns[Math.floor(Math.random() * spawns.length)];
+    slot.spawnAs(pickType(waves.wave), mouth.clone(), hpScale(waves.wave));
+  }
+}
+
 // 叩きつけで地面が割れる
 function smashGround(enemy) {
   const dir = new THREE.Vector3(-Math.sin(enemy.facing), 0, -Math.cos(enemy.facing));
@@ -1581,6 +1715,29 @@ function frame() {
     },
     onShoot: (enemy, kind, damage, target) => enemyShoot(enemy, kind, damage, target, now),
     onSwing: (enemy) => sfx.playAt('zswing', enemy.position),
+    // ---- ボスの攻撃 ----
+    onStomp: (boss, damage, radius) => slam(boss, damage, radius, now),
+    onJumpAim: (boss, spot, radius, life) => {
+      effects.slamMarker(spot, radius, life);
+      sfx.playAt('growl', boss.position, { volume: 1.6 });
+      net.send('fx', { k: 'mark', p: [r2(spot.x), r2(spot.y), r2(spot.z)], r: radius, l: life });
+      hud.setToast('タイタンが跳ぶ構え！ 印から離れろ', 2.0);
+    },
+    onShockwave: (boss, damage) => spawnShockwave(boss, damage),
+    onBeam: (boss, damage) => titanBeam(boss, damage),
+    onSummon: (boss, count) => summonForBoss(count),
+    // 掴んだ雑魚を投げつける。投げられた側もダメージを受ける
+    onThrow: (boss, prey, target) => {
+      if (!prey?.alive || !target) return;
+      const to = target.position.clone();
+      effects.tracer(prey.position.clone().setY(prey.position.y + 1), to);
+      sfx.playAt('slam', to, { volume: 0.9 });
+      // 投げられたゾンビは着地点へ飛ばされ、自分もダメージを負う
+      prey.root.position.set(to.x + (Math.random() - 0.5) * 3, 0, to.z + (Math.random() - 0.5) * 3);
+      damageEnemy(prey, 40, now, null, net.id);
+      if (game && !paused && !game.player.downed
+        && game.player.position.distanceTo(to) < 3.5) applyDamage(TITAN.throwDamage);
+    },
     onBurrow: (enemy, phase) => {
       effects.dirtBurst(enemy.position, phase === 'out');
       sfx.playAt('dig', enemy.position);
@@ -1606,10 +1763,21 @@ function frame() {
   if (simulating) {
     if (game && !paused) waves.update(dt);
     for (const e of enemies) e.update(dt, now, world);
+    // 広がっている衝撃波を進める。当たり判定はここで出る
+    if (shockwaves.length) {
+      const targets = waveTargets();
+      for (let i = shockwaves.length - 1; i >= 0; i--) {
+        shockwaves[i].update(dt, targets);
+        if (shockwaves[i].done) shockwaves.splice(i, 1);
+      }
+    }
   } else {
     // 子はゾンビを考えさせず、届いた場所へなじませるだけ
     for (const e of enemies) e.netUpdate(dt);
   }
+
+  // ボスがいる間だけ、専用のHPバーを出す
+  hud.updateBoss(enemies.find((e) => e.active && e.alive && e.def.boss) ?? null);
 
   // タレットとゴッドタレットが撃つのも親の仕事。子は見た目だけ動かす
   for (const s of builder.structures) {
@@ -1941,6 +2109,7 @@ addEventListener('resize', resize);
 // iOS は回転直後の innerWidth が古いままなので、少し待ってもう一度合わせる
 addEventListener('orientationchange', () => setTimeout(resize, 300));
 resize();
+
 
 
 

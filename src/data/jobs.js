@@ -239,6 +239,29 @@ const MUTANT = {
   drop: { brick: [30, 30], iron: [50, 50] },
 };
 
+// ボス「タイタン」。10ウェーブごとに1体だけ現れる。
+// 中身の動きは src/boss.js、見た目は src/titan.js
+const TITAN_BOSS = {
+  ...NORMAL_ZOMBIE,
+  id: 'titan',
+  name: 'タイタン',
+  model: 'titan',
+  // これが立っていると Enemy が専用の頭（TitanBrain）を用意する
+  boss: true,
+  hp: 2600,
+  height: 7.0,
+  sight: 60,
+  walkSpeed: 1.6,
+  chaseSpeed: 2.6,
+  damage: 34,
+  reach: 7.5,
+  attackCooldown: 3.2,
+  structureDamage: 200,
+  breaksDrones: true,
+  droneDamage: 60,
+  drop: { wood: [60, 90], brick: [60, 90], iron: [40, 60] },
+};
+
 // 装甲を着るとHPが増え、殴りも重くなり、落とす素材も増える
 const ARMOR_BONUS = {
   silver: { hp: 50, damage: 8, drop: { brick: [5, 5] } },
@@ -271,6 +294,8 @@ function armored(base, armorId, id, name) {
 
 // 落とすコインは硬さに比例させる。通常ゾンビ1枚、ミュータント5枚
 function withCoins(def) {
+  // ボスは倒した手応えに見合うぶんを、決め打ちで渡す
+  if (def.boss) return { ...def, coins: 500 };
   return { ...def, coins: Math.max(1, Math.round(def.hp / 60)) };
 }
 
@@ -289,4 +314,5 @@ export const ENEMIES = Object.fromEntries(Object.entries({
   mutant: MUTANT,
   mutantSilver: armored(MUTANT, 'silver', 'mutantSilver', '銀装甲のミュータント'),
   mutantGold: armored(MUTANT, 'gold', 'mutantGold', '金装甲のミュータント'),
+  titan: TITAN_BOSS,
 }).map(([id, def]) => [id, withCoins(def)]));

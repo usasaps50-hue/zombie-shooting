@@ -50,6 +50,10 @@ export class Hud {
     this.waveNum = document.getElementById('wave-num');
     this.waveLeft = document.getElementById('wave-left');
     this.hurt = document.getElementById('hurt');
+    this.bossEl = document.getElementById('boss');
+    this.bossName = document.getElementById('boss-name');
+    this.bossFill = document.getElementById('boss-fill');
+    this.bossPhase = document.getElementById('boss-phase');
     this.net = document.getElementById('net');
     this.netStatus = document.getElementById('net-status');
     this.netPlayers = document.getElementById('net-players');
@@ -89,6 +93,29 @@ export class Hud {
   hide() { this.el.classList.add('hidden'); }
 
   // つながっている人の一覧。中身が変わったときだけ描き直す
+  // ボスのHPバー。boss が null なら消す
+  updateBoss(boss) {
+    if (!boss) {
+      this.bossEl.classList.add('hidden');
+      return;
+    }
+    const brain = boss.boss;
+    this.bossEl.classList.remove('hidden');
+    this.bossName.textContent = boss.def.name;
+    this.bossFill.style.width = `${Math.max(0, (boss.hp / boss.maxHp) * 100)}%`;
+    // 装甲が残っている間は、本体をほとんど削れないと色で伝える
+    const armored = brain ? brain.platesLeft > 0 : false;
+    this.bossEl.classList.toggle('armored', armored);
+    this.bossEl.classList.toggle('rage', brain?.phase === 3);
+    if (armored) {
+      this.bossPhase.textContent = `第1形態　装甲 残り${brain.platesLeft}枚（光る装甲をこわせ）`;
+    } else if (brain?.phase === 3) {
+      this.bossPhase.textContent = '第3形態　衝撃波は高い所へ／ビームは横に避けろ';
+    } else {
+      this.bossPhase.textContent = '第2形態　胸の核が弱点';
+    }
+  }
+
   updateNet(net) {
     if (!net || net.status === 'off') {
       this.net.classList.add('hidden');
