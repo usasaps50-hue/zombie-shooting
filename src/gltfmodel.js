@@ -21,6 +21,64 @@ const SOURCES = {
   zombieThin: 'assets/models/zombiekit/Characters/glTF/Zombie_Ribcage.gltf',
 };
 
+// 動かない置物（武器・街の小物）。
+// どれも「握り（根元）が原点で、+Z の向きに伸びている」形なので、
+// ゲームの向き（-Z が前）に合わせて半回転させて使う。
+// length は、ゲームでの長さ（m）。素材の大きさはここに合わせる
+const PROPS = {
+  // length はゲームでの長さ(m)、lift は構えたときの高さの微調整
+  pistol: { url: 'assets/models/zombiekit/Weapons/glTF/Pistol.gltf', length: 0.38, lift: 0.05 },
+  ak47: { url: 'assets/models/zombiekit/Weapons/glTF/Rifle.gltf', length: 0.86, lift: 0.08 },
+  knife: { url: 'assets/models/zombiekit/Weapons/glTF/Knife.gltf', length: 0.46, lift: 0.03 },
+  spear: { url: 'assets/models/zombiekit/Weapons/glTF/Spear.gltf', length: 1.4, lift: 0.05 },
+};
+
+// id -> { scene, length }
+const props = new Map();
+
+export function hasProp(id) {
+  return props.has(id);
+}
+
+// 置物を1つ作る。向きと大きさはゲームに合わせてある。
+// gold を立てると金色に、tint を渡すとその色をかける
+export function makeProp(id, { gold = false, tint = null } = {}) {
+  const src = props.get(id);
+  if (!src) return null;
+  const group = new THREE.Group();
+  const model = src.scene.clone(true);
+  // 素材は +Z に伸びている。ゲームは -Z が前なので半回転させる
+  model.rotation.y = Math.PI;
+  model.scale.setScalar(src.scale);
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = false;
+    o.receiveShadow = false;
+    // 形も材質も1本ずつ複製する。clone だけだと元のモデルと共有してしまい、
+    // どこかで片づけたときに他の場所の武器まで消えてしまう
+    o.geometry = o.geometry.clone();
+    o.material = o.material.clone();
+    if (gold) o.material.color.set(0xe0b23c);
+    else if (tint) o.material.color.multiply(new THREE.Color(tint));
+    if (gold) {
+      o.material.metalness = 0.7;
+      o.material.roughness = 0.3;
+    }
+  });
+  group.add(model);
+
+  // 素材によって原点の位置がばらばらなので、
+  // 「握るところが原点、切っ先が -Z」にそろえる
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model);
+  model.position.z -= box.max.z - GRIP_BACK;
+  model.position.y -= (box.min.y + box.max.y) / 2 - (src.lift ?? 0);
+  return group;
+}
+
+// 握りの後ろ端を、原点からこれだけ後ろに置く
+const GRIP_BACK = 0.16;
+
 // ゲームの状態 → glTF のアニメーション名。
 // 左が無いときは右の候補を順に探し、どれも無ければ Idle に落とす
 const CLIPS = {
@@ -60,8 +118,22 @@ export async function preloadModels() {
       // 読めなくても、手作りのモデルで遊べる
     }
   });
-  await Promise.all(jobs);
-  return [...loaded.keys()];
+  // 武器などの置物も、同じように読む
+  const propJobs = Object.entries(PROPS).map(async ([id, { url, length }]) => {
+    try {
+      const gltf = await loader.loadAsync(url);
+      const box = new THREE.Box3().setFromObject(gltf.scene);
+      const size = box.getSize(new THREE.Vector3());
+      // 一番長い辺を、ゲームで決めた長さに合わせる
+      const longest = Math.max(size.x, size.y, size.z) || 1;
+      props.set(id, { scene: gltf.scene, scale: length / longest, lift: PROPS[id].lift ?? 0 });
+    } catch {
+      // 読めなければ、手作りのモデルで出る
+    }
+  });
+
+  await Promise.all([...jobs, ...propJobs]);
+  return { characters: [...loaded.keys()], props: [...props.keys()] };
 }
 
 // 手作りのモデルと同じ使い方ができる、glTF のキャラクター。

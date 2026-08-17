@@ -65,8 +65,10 @@ export function makeItemIcons(ids, size = 96) {
     scene.remove(mesh);
     mesh.traverse((o) => {
       if (!o.isMesh) return;
+      // 外から持ってきたモデルは形を使い回すことがあるので、
+      // ここで消してよいのは「このアイコン専用に作ったもの」だけ
       o.geometry.dispose();
-      o.material.dispose();
+      for (const m of [o.material].flat()) m.dispose();
     });
   }
 

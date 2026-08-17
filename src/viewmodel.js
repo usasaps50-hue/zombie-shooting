@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { hasProp, makeProp } from './gltfmodel.js';
 
 const smooth = (t) => t * t * (3 - 2 * t);
 const phase = (t, a, b) => THREE.MathUtils.clamp((t - a) / (b - a), 0, 1);
@@ -8,6 +9,20 @@ const GOLD = new THREE.Color(0xe0b23c);
 export function createItemMesh(id, gold = false, silencer = false) {
   const g = new THREE.Group();
   const mat = (color, rough = 0.6) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0.2 });
+
+  // 外から持ってきたモデルがあれば、そちらを使う。
+  // 無ければ、下の手作りのモデルで出る
+  if (hasProp(id)) {
+    g.add(makeProp(id, { gold }));
+    if (silencer) {
+      // サイレンサーだけは、素材に無いので足す
+      const can = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.24, 10), mat(0x2a2e34, 0.5));
+      can.rotation.x = Math.PI / 2;
+      can.position.set(0, 0.06, id === 'ak47' ? -0.7 : -0.42);
+      g.add(can);
+    }
+    return g;
+  }
 
   if (id === 'ak47') {
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.1, 0.5), mat(0x3a3f47));
