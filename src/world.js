@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { QUALITY } from './device.js';
 import {
   buildingNames, buildingSize, makeBuilding,
-  hasScenery, makeScenery, ROAD_TILE,
+  hasScenery, scenerySize, makeScenery, ROAD_TILE,
 } from './gltfmodel.js';
 
 // 廃都市の戦場。見えているものは、外から持ってきた素材だけで組んである。
@@ -239,6 +239,96 @@ export function createWorld() {
       claim(x - w / 2, x + w / 2, z - d / 2, z + d / 2);
     }
   }
+
+  // ---- 場外の壁。積み上げたコンテナで、街のはしを目に見える形でふさぐ ----
+  // 見えない壁だけだと、どこが行き止まりなのか分からず走りこんでしまう
+  function perimeterWall() {
+    const ids = ['container', 'containerGreen'].filter(hasScenery);
+    if (!ids.length) return;
+    const size = scenerySize(ids[0]);
+    const step = size.x + 0.25;
+    let n = 0;
+
+    // 1本ぶんの壁。along のあいだにコンテナを並べ、ところどころ2段積みにする
+    const line = (fixed, from, to, axis) => {
+      for (let at = from; at <= to; at += step) {
+        // 大通りの出口は空ける。ここはトンネルになる
+        if (Math.abs(at) < ROAD_HALF + 2.2) continue;
+        const x = axis === 'x' ? at : fixed;
+        const z = axis === 'x' ? fixed : at;
+        const yaw = axis === 'x' ? 0 : Math.PI / 2;
+        const box = makeScenery(ids[n % ids.length]);
+        if (!box) return;
+        box.position.set(x, 0, z);
+        box.rotation.y = yaw;
+        scene.add(box);
+        // 3個に1個は上にもう1段積んで、乗り越えられない高さにする
+        if (n % 3 === 1) {
+          const top = makeScenery(ids[(n + 1) % ids.length]);
+          top.position.set(x, size.y, z);
+          top.rotation.y = yaw + 0.06;
+          scene.add(top);
+        }
+        claim(x - size.x / 2, x + size.x / 2, z - size.z / 2, z + size.z / 2);
+        n++;
+      }
+    };
+
+    const edge = ARENA - size.z / 2 - 0.3;
+    for (const side of [-1, 1]) {
+      line(side * edge, -ARENA + 1, ARENA - 1, 'x');
+      line(side * edge, -ARENA + 1, ARENA - 1, 'z');
+    }
+  }
+  perimeterWall();
+
+  // ---- トンネル。大通りの出口4か所。ゾンビはここから出てくる ----
+  // コンテナを2つ立てて、その上にもう1つ渡した「くぐる道」。
+  // 中は通れるように、屋根ぶんの当たり判定は頭より上にだけ置く
+  function tunnel(dirX, dirZ) {
+    const ids = ['container', 'containerGreen'].filter(hasScenery);
+    if (!ids.length) return;
+    const size = scenerySize(ids[0]);
+    // 大通りの出口の、少し内がわ
+    const cx = dirX * (ARENA - 5.5);
+    const cz = dirZ * (ARENA - 5.5);
+    // 道と直角の向き（左右の壁を置く向き）
+    const sideX = dirZ;
+    const sideZ = dirX;
+    // 壁のあいだの空き。屋根の1本で渡しきれる広さにする
+    const gap = 3.6;
+    // 左右の壁は、長いほうを道と平行に向ける
+    const wallYaw = dirX ? 0 : Math.PI / 2;
+
+    for (const side of [-1, 1]) {
+      const x = cx + sideX * side * gap;
+      const z = cz + sideZ * side * gap;
+      const wall = makeScenery(ids[0]);
+      if (!wall) return;
+      wall.position.set(x, 0, z);
+      wall.rotation.y = wallYaw;
+      scene.add(wall);
+      // 当たり判定。長い辺が道と平行なので、向きに合わせて幅と奥行きを入れかえる
+      const w = dirX ? size.x : size.z;
+      const d = dirX ? size.z : size.x;
+      addHiddenBox(x, 0, z, w, size.y, d);
+      claim(x - w / 2 - 0.4, x + w / 2 + 0.4, z - d / 2 - 0.4, z + d / 2 + 0.4);
+    }
+
+    // 屋根。長いほうを道と直角に向けて、左右の壁のあいだに渡す
+    const roof = makeScenery(ids[1] ?? ids[0]);
+    if (roof) {
+      roof.position.set(cx, size.y, cz);
+      roof.rotation.y = wallYaw + Math.PI / 2;
+      scene.add(roof);
+    }
+    // 屋根の当たり判定は、くぐる高さより上だけ。中は通れる
+    const rw = dirX ? size.z : size.x;
+    const rd = dirX ? size.x : size.z;
+    addHiddenBox(cx, size.y, cz, rw, size.y, rd);
+    claim(cx - 5, cx + 5, cz - 5, cz + 5);
+  }
+  for (const [dx, dz] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) tunnel(dx, dz);
 
   // ---- 陸橋 ----
   overpass();
