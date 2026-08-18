@@ -72,6 +72,46 @@ const PALETTES = [
   'Texture_Red', 'Texture_Blue', 'Texture_Yellow', 'Texture_Casino',
 ];
 
+// どのパレットにも入っている、まっ赤な色（屋根やひさしに使われている）
+const ROOF_SLOT = [0xed, 0x1c, 0x24];
+// 屋根の塗りかえ色。廃れた街に合う、くすんだ色をならべる
+const ROOF_COLORS = [
+  [0x7a, 0x4a, 0x3a], [0x4c, 0x4f, 0x55], [0x5c, 0x61, 0x57],
+  [0x6b, 0x5f, 0x4a], [0x38, 0x3c, 0x42],
+];
+
+// パレットの絵の「まっ赤」だけを、別の色に塗りかえた写しを作る
+function recolorRoof(tex, rgb) {
+  const img = tex.image;
+  if (!img || !img.width) return null;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const px = data.data;
+    for (let i = 0; i < px.length; i += 4) {
+      if (px[i] !== ROOF_SLOT[0] || px[i + 1] !== ROOF_SLOT[1] || px[i + 2] !== ROOF_SLOT[2]) continue;
+      px[i] = rgb[0];
+      px[i + 1] = rgb[1];
+      px[i + 2] = rgb[2];
+    }
+    ctx.putImageData(data, 0, 0);
+    const out = new THREE.CanvasTexture(canvas);
+    out.colorSpace = THREE.SRGBColorSpace;
+    out.magFilter = THREE.NearestFilter;
+    out.minFilter = THREE.NearestFilter;
+    out.generateMipmaps = false;
+    out.flipY = false;
+    return out;
+  } catch {
+    // 絵を読み取れない環境（file:// で開いたときなど）は、そのまま使う
+    return null;
+  }
+}
+
 // name -> { object, size }
 const buildings = new Map();
 const palettes = [];
@@ -119,6 +159,20 @@ const SCENERY = {
   roadCrack2: { url: 'assets/models/zombiekit/Environment/glTF/Street_Straight_Crack2.gltf', kind: 'gltf' },
   road4Way: { url: 'assets/models/zombiekit/Environment/glTF/Street_4Way.gltf', kind: 'gltf' },
   roadT: { url: 'assets/models/zombiekit/Environment/glTF/Street_T.gltf', kind: 'gltf' },
+  // 高架の道。ここに登ればタイタンの衝撃波を避けられる。
+  // 道路タイルと同じ8m四方になるように合わせる
+  bridge: {
+    url: 'assets/models/streets/FBX/Street_Bridge.fbx', kind: 'fbx',
+    width: ROAD_TILE, color: 0x5a5e66,
+  },
+  bridgeRamp: {
+    url: 'assets/models/streets/FBX/Street_Bridge_Ramp.fbx', kind: 'fbx',
+    width: ROAD_TILE, color: 0x5a5e66,
+  },
+  bridgeUnder: {
+    url: 'assets/models/streets/FBX/Street_Bridge_Underpass.fbx', kind: 'fbx',
+    width: ROAD_TILE, color: 0x5a5e66,
+  },
   tyres: { url: 'assets/models/zombiekit/Environment/glTF/Wheels_Stack.gltf', kind: 'gltf' },
 };
 
@@ -279,7 +333,9 @@ export async function preloadModels() {
   });
 
   // 色パレット。小さいので、にじまないよう「点のまま」拡大する。
-  // 同じ絵を何度も読まないよう、まず種類ごとに1回だけ読む
+  // 同じ絵を何度も読まないよう、まず種類ごとに1回だけ読む。
+  // どのパレットも屋根がまっ赤（ROOF_SLOT）なので、そこだけ塗りかえて
+  // 屋根の色ちがいを何種類か作る。街並みが赤一色にならない
   const paletteFiles = new Map();
   const palJobs = [...new Set(PALETTES)].map(async (name) => {
     try {
@@ -290,7 +346,7 @@ export async function preloadModels() {
       tex.minFilter = THREE.NearestFilter;
       tex.generateMipmaps = false;
       tex.flipY = false;
-      paletteFiles.set(name, tex);
+      paletteFiles.set(name, ROOF_COLORS.map((rgb) => recolorRoof(tex, rgb) ?? tex));
     } catch { /* 読めなければ色なしで出る */ }
   });
 
@@ -320,7 +376,11 @@ export async function preloadModels() {
         // 素材によって単位がばらばらなので、決めた高さに合わせる
         obj.updateMatrixWorld(true);
         const raw = new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
-        obj.scale.setScalar(cfg.height ? cfg.height / Math.max(0.001, raw.y) : (cfg.scale ?? 0.01));
+        obj.scale.setScalar(
+          cfg.width ? cfg.width / Math.max(0.001, raw.x)
+            : cfg.height ? cfg.height / Math.max(0.001, raw.y)
+              : (cfg.scale ?? 0.01)
+        );
         // 道路パックには色が入っていないので、こちらで塗る
         obj.traverse((o) => {
           if (o.isMesh) {
@@ -349,8 +409,8 @@ export async function preloadModels() {
   // 読み終わってから、書いた順どおりに並べる。
   // 読めた順に入れると、開くたびに街の色が変わってしまう
   for (const name of PALETTES) {
-    const tex = paletteFiles.get(name);
-    if (tex) palettes.push(tex);
+    const variants = paletteFiles.get(name);
+    if (variants) palettes.push(...variants);
   }
   return {
     characters: [...loaded.keys()],
