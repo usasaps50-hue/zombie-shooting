@@ -197,6 +197,8 @@ export class Enemy {
     // 張りついてから、相手にいちばん近づけた距離と、その時刻
     this.clingBest = Infinity;
     this.clingStuckAt = 0;
+    // 壁にいるあいだに撃たれたか
+    this.clingHurt = false;
     // 壁に張りついて待つ高さ
     this.clingY = 0;
     // 壁のほうを向く向き
@@ -341,6 +343,9 @@ export class Enemy {
     this.#refresh();
     if (this.alive) {
       this.zombie.setMode('hit');
+      // 壁に張りついている天井ゾンビは、撃たれたらじっとしていない。
+      // そのまま待っていると、ただの的になってしまう
+      if (this.climbState === 'cling' || this.climbState === 'up') this.clingHurt = true;
       this.shooting = false;
       // 振りかけていた攻撃は中断される
       this.attacking = false;
@@ -932,6 +937,12 @@ export class Enemy {
       this.#face(Math.atan2(this.climbInX, this.climbInZ), dt * 6);
       this.#setWallPose(true);
       this.zombie.setMode('crawl');
+      // 登っている途中で撃たれたら、待たずにその場から飛びかかる
+      if (this.clingHurt && pos.y > 2.5) {
+        this.clingHurt = false;
+        this.#dropAtPlayer(player, now, onSlamAim, colliders);
+        return true;
+      }
       if (pos.y >= this.clingY) {
         // 登りきった。ここから相手が来るまで張りついて待つ
         pos.y = this.clingY;
@@ -959,6 +970,14 @@ export class Enemy {
       this.zombie.setMode('crawl');
       this.zombie.walkRate = 0.35;
       this.state = 'chase';
+
+      // 撃たれたら、待たずに飛びかかる
+      if (this.clingHurt) {
+        this.clingHurt = false;
+        this.zombie.walkRate = def.animRate ?? 1;
+        this.#dropAtPlayer(player, now, onSlamAim, colliders);
+        return true;
+      }
 
       // 相手がこの距離まで来たら、頭上から落ちてくる
       const flat = player
@@ -1010,6 +1029,7 @@ export class Enemy {
       const wall = this.#pickWall(colliders, player.position);
       if (wall) {
         this.#setClimbTarget(wall, player.position);
+        this.clingHurt = false;
         this.climbState = 'toWall';
         this.climbUntil = now + 12;
         return true;
@@ -1206,7 +1226,9 @@ export class Enemy {
       colliders, structures, player, onHitPlayer, onBreak, onShoot, onSpot, onSwing,
       stairPoints, onShriek = () => {},
     } = ctx;
-    if (this.zombie.mode === 'hit') return;
+    // のけぞっている間は動かない。ただし壁にいるときだけは、
+    // 固まっていると撃たれ放題になるので、そのまま考えさせる
+    if (this.zombie.mode === 'hit' && !this.climbState) return;
     const pos = this.root.position;
 
     const chaseable = player && !player.downed;
@@ -1390,6 +1412,7 @@ export class Enemy {
     this.nextShriekAt = 0;
     this.climbState = null;
     this.nextClimbAt = 0;
+    this.clingHurt = false;
     // 壁ばりの姿勢のまま使い回さないよう、立ち姿に戻しておく
     this.#setWallPose(false);
     this.burrowUsed = false;

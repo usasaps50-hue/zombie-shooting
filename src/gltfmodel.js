@@ -512,8 +512,9 @@ export class GltfCharacter {
     clip ??= this.source.animations.find((c) => c.name === 'Idle') ?? this.source.animations[0];
     if (!clip) return null;
     const action = this.mixer.clipAction(clip);
-    // 倒れる動きは繰り返さず、最後の姿勢で止める
-    if (mode === 'death') {
+    // 倒れる動きと、のけぞる動きは繰り返さない。
+    // のけぞりを繰り返すと、そのあいだ何も考えられなくなって固まってしまう
+    if (mode === 'death' || mode === 'hit') {
       action.setLoop(THREE.LoopOnce, 1);
       action.clampWhenFinished = true;
     }
@@ -600,6 +601,11 @@ export class GltfCharacter {
   update(dt) {
     this.modeTime += dt;
     this.mixer.update(dt);
+    // のけぞりが終わったら、自分で立ち姿に戻る。
+    // 手作りのモデル（zombie.js）と同じで、戻さないと動けなくなる
+    if (this.mode === 'hit' && this.modeTime >= this.#duration) {
+      this.setMode('idle');
+    }
     // 倒れきったあとは、ゆっくり消えていく
     if (this.mode === 'death') {
       const fade = Math.min(1, Math.max(0, (this.modeTime - this.#duration) / 0.8));
