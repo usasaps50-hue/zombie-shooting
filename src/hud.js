@@ -209,7 +209,7 @@ export class Hud {
     [...this.slots.children].forEach((li, i) => li.classList.toggle('on', i === weapons.index));
     this.touchSlots.forEach((btn, i) => btn.classList.toggle('on', i === weapons.index));
 
-    // シャベルや包帯にはリロードも切替もないので、ボタンごと消す
+    // 斧や包帯にはリロードも切替もないので、ボタンごと消す
     const cycles = item?.kind === 'build';
     this.reloadBtn.classList.toggle('hidden', !cycles && item?.kind !== 'gun');
     this.reloadBtn.textContent = cycles ? '切替' : 'R';
@@ -353,7 +353,7 @@ export class Hud {
     this.waveLeft.textContent = `残り ${waves.remaining} / ${waves.total}`;
   }
 
-  // シャベルLv3以上のときだけ出る、攻撃を当てて貯めるスキル
+  // 斧Lv3以上のときだけ出る、攻撃を当てて貯めるスキル
   #updateSkill(skill) {
     this.skillText.classList.toggle('hidden', !skill);
     this.skillBtn.classList.toggle('hidden', !skill);

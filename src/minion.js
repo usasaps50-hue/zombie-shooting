@@ -7,6 +7,7 @@ import { Mother } from './mother.js';
 import { makeLabel, hpColor } from './label.js';
 import { floorHeight, STEP_HEIGHT, STEP_SLACK } from './player.js';
 import { ENEMIES } from './data/jobs.js';
+import { isLoaded, GltfCharacter } from './gltfmodel.js';
 
 // 通信でやり取りするときの並び。増やすときは必ず末尾に足す
 const NET_IDS = Object.keys(ENEMIES);
@@ -183,6 +184,17 @@ export class Minion {
     if (this.black) return new Zombie('shadow', null, {});
     const def = this.stats.def;
     if (!def) return new Zombie('green', null, {});
+    // 敵だったときと同じモデル・同じ色にする。
+    // 味方になったとたん見た目が変わってしまわないように
+    if (def.gltf && isLoaded(def.gltf)) {
+      const model = new GltfCharacter(def.gltf, {
+        height: this.stats.height,
+        tint: def.tint ?? null,
+        walkScale: def.animRate ?? 1,
+      });
+      if (def.stretch) model.root.scale.set(...def.stretch);
+      return model;
+    }
     if (def.model === 'titan') return new Titan();
     if (def.model === 'mother') return new Mother();
     if (def.model === 'mutant') return new Mutant(def.armor);

@@ -310,12 +310,19 @@ export class ViewModel {
 
     const speared = this.itemId === 'spear';
     const flagged = this.itemId === 'team';
-    const longHandled = this.itemId === 'shovel' || this.itemId === 'hammer'
-      || this.itemId === 'reborn' || this.itemId === 'death' || flagged;
+    // 斧とハンマー。持ってきたモデルは前（-Z）に伸びているので、
+    // 縦に立っている手作りの杖とは別の構えかたにする
+    const chopper = (this.itemId === 'shovel' || this.itemId === 'hammer') && hasProp(this.itemId);
+    const longHandled = !chopper
+      && (this.itemId === 'shovel' || this.itemId === 'hammer'
+        || this.itemId === 'reborn' || this.itemId === 'death' || flagged);
     // チームロッドは旗が見どころなので、立てて持って旗を画面に入れる
     const base = speared
       // 槍は前へ構える。突き出す動きが分かるよう、まっすぐ前を向かせる
       ? { pos: new THREE.Vector3(0.3, -0.3, -0.5), rot: new THREE.Euler(0.05, -0.1, 0.06) }
+      : chopper
+      // 斧は刃を上へ向けて、右肩のあたりに担ぐ
+      ? { pos: new THREE.Vector3(0.36, -0.34, -0.44), rot: new THREE.Euler(-0.55, 0.38, 0.30) }
       : flagged
       ? { pos: new THREE.Vector3(0.52, -0.5, -0.85), rot: new THREE.Euler(0.24, -0.5, 0.46) }
       : longHandled
@@ -370,14 +377,20 @@ export class ViewModel {
         mag.visible = !(drop > 0.95 && insert < 0.05);
       }
     } else if (name === 'swing') {
-      // 横薙ぎ：右に振りかぶってから左へ薙ぐ
-      const swing = smooth(Math.min(t / 0.5, 1)) - smooth(phase(t, 0.55, 1)) * 0.85;
-      m.position.x += 0.3 - swing * 1.0;
-      m.position.z += 0.28 - swing * 0.5;
-      m.position.y += swing * 0.16;
-      m.rotation.y += -0.7 + swing * 2.0;
-      m.rotation.z += 0.35 - swing * 0.5;
-      m.rotation.x += -0.35 + swing * 0.5;
+      // 袈裟斬り。仲間から見えている動き（素材の Slash）と同じ順番で、
+      // 右上へ振りかぶってから、左下へ斜めに振り下ろす
+      const raise = smooth(phase(t, 0, 0.24));
+      const chop = smooth(phase(t, 0.24, 0.46));
+      const back = smooth(phase(t, 0.5, 1));
+      // 振りかぶっている量と、振り下ろしきった量
+      const up = raise - chop;
+      const down = chop - back;
+      m.position.x += up * 0.16 - down * 0.30;
+      m.position.y += up * 0.34 - down * 0.26;
+      m.position.z += -up * 0.10 - down * 0.06;
+      m.rotation.x += -up * 0.95 + down * 1.35;
+      m.rotation.y += up * 0.20 - down * 0.40;
+      m.rotation.z += up * 0.50 - down * 0.85;
     } else if (name === 'cast') {
       // 杖を掲げて、先端の玉が光ってから振り下ろす
       const raise = smooth(phase(t, 0, 0.45));

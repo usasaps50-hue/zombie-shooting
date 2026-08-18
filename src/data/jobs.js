@@ -75,8 +75,11 @@ const NORMAL_ZOMBIE = {
   name: '通常ゾンビ',
   model: 'zombie',
   skin: 'green',
-  // 外から持ってきたモデルを使うときの名前。読めていなければ手作りのほうで動く
+  // 外から持ってきたモデルを使うときの名前。読めていなければ手作りのほうで動く。
+  // 種類ごとに zombie（標準）/ zombieChubby（太め）/ zombieThin（やせ）を選ぶ。
+  // tint はモデルにかける色、animRate は手足を振る速さ
   gltf: 'zombie',
+  tint: null,
   armor: null,
   hp: 75,
   height: 1.8,
@@ -97,6 +100,9 @@ const BLUE_ZOMBIE = {
   id: 'blue',
   name: '索敵ゾンビ',
   skin: 'blue',
+  // 青白い肌。首をのばして探るように、ゆっくり歩く
+  tint: 0x5f8ce8,
+  animRate: 0.9,
   sight: NORMAL_ZOMBIE.sight * 1.8,
   drop: { wood: [10, 10], brick: [5, 5] },
 };
@@ -107,6 +113,10 @@ const FAST_ZOMBIE = {
   id: 'fast',
   name: '俊足ゾンビ',
   skin: 'red',
+  // 肉が落ちたやせ型。赤黒くて、手足を速く振る
+  gltf: 'zombieThin',
+  tint: 0xd06a5a,
+  stretch: [0.94, 1.02, 0.94],
   hp: 50,
   sight: 20,
   walkSpeed: 2.0,
@@ -123,6 +133,10 @@ const PURPLE_ZOMBIE = {
   id: 'purple',
   name: '紫ゾンビ',
   skin: 'purple',
+  // ぶくぶくに膨れた紫。重そうに、のっそり歩く
+  gltf: 'zombieChubby',
+  tint: 0xa87fc8,
+  animRate: 0.85,
   hp: 90,
   sight: 18,
   chaseSpeed: 3.0,
@@ -146,6 +160,9 @@ const GAMMA_ZOMBIE = {
   skin: 'gamma',
   outfit: 'cowboy',
   behavior: 'gunner',
+  // 日に焼けた黄土色。撃つために足を止めるので、歩きはゆっくり
+  tint: 0xc8b070,
+  animRate: 0.95,
   hp: 120,
   sight: 75,
   walkSpeed: 1.3,
@@ -174,6 +191,8 @@ const SKELETON = {
   id: 'skeleton',
   name: 'スケルトン',
   model: 'skeleton',
+  // 骨だけの体は持ってきた素材に無いので、手作りのモデルで出す
+  gltf: null,
   weapon: 'club',
   skin: null,
   hp: 100,
@@ -216,6 +235,10 @@ const SWARM_ZOMBIE = {
   id: 'swarm',
   name: '群れゾンビ',
   skin: 'swarm',
+  // 小さくやせている。ちょこちょこと小刻みに走る
+  gltf: 'zombieThin',
+  tint: 0xa8b878,
+  animRate: 1.7,
   // 小さいので、モデル全体を縮める
   stretch: [0.72, 0.68, 0.72],
   hp: 25,
@@ -239,6 +262,10 @@ const SHRIEKER_ZOMBIE = {
   name: '叫びゾンビ',
   skin: 'shrieker',
   behavior: 'shrieker',
+  // あばらの浮いた青白い体。落ち着きなく、せかせか動く
+  gltf: 'zombieThin',
+  tint: 0xd8dcc0,
+  animRate: 1.3,
   // やせこけて背だけ高い
   stretch: [0.82, 1.12, 0.82],
   hp: 70,
@@ -270,6 +297,10 @@ const CLIMBER_ZOMBIE = {
   name: '天井ゾンビ',
   skin: 'climber',
   behavior: 'climber',
+  // 影のような灰青。壁に張りつくので、暗い色にして見つけにくくする
+  gltf: 'zombieThin',
+  tint: 0x6f7d8a,
+  animRate: 1.15,
   // 手足が長く、ひょろりと背が高い
   stretch: [0.74, 1.26, 0.74],
   hp: 60,
@@ -288,7 +319,9 @@ const CLIMBER_ZOMBIE = {
   climbMaxTop: 24,
   climbRange: 30,
   climbSpeed: 4.2,
-  // 屋上から飛び降りる。真上これくらいまで近づいたら降りる
+  // 壁に張りついて待っていられる時間。これを過ぎたら、しびれを切らして降りる
+  clingTime: 30,
+  // 壁に張りついたまま待って、相手がこの距離まで来たら落ちてくる
   dropRange: 8,
   dropDamage: 22,
   dropRadius: 2.8,
@@ -305,6 +338,8 @@ const MUTANT = {
   id: 'mutant',
   name: 'ミュータントゾンビ',
   model: 'mutant',
+  // 巨体は持ってきた素材に無いので、手作りのモデルで出す
+  gltf: null,
   hp: 300,
   height: 2.6,
   sight: 18,
@@ -337,6 +372,8 @@ const TITAN_BOSS = {
   id: 'titan',
   name: 'タイタン',
   model: 'titan',
+  // ボスの姿は手作りのモデル（src/titan.js）
+  gltf: null,
   // これが立っていると Enemy が専用の頭（TitanBrain）を用意する
   boss: true,
   hp: 2600,
@@ -368,6 +405,8 @@ const MOTHER_BOSS = {
   id: 'mother',
   name: 'マザー',
   model: 'mother',
+  // ボスの姿は手作りのモデル（src/mother.js）
+  gltf: null,
   boss: true,
   // 動かないので、どのボスか見分けやすいよう別の頭を使う
   bossKind: 'mother',
@@ -386,10 +425,21 @@ const MOTHER_BOSS = {
 };
 
 // 装甲を着るとHPが増え、殴りも重くなり、落とす素材も増える
+// tint は装甲を着た見た目の色。重い装甲を着ているので、歩きは少し重くなる
 const ARMOR_BONUS = {
-  silver: { hp: 50, damage: 8, drop: { brick: [5, 5] } },
-  gold: { hp: 100, damage: 8, drop: { brick: [15, 15], iron: [4, 10] } },
+  silver: { hp: 50, damage: 8, tint: 0xb9c2cc, animRate: 0.85, drop: { brick: [5, 5] } },
+  gold: { hp: 100, damage: 8, tint: 0xd8b455, animRate: 0.8, drop: { brick: [15, 15], iron: [4, 10] } },
 };
+
+// 2つの色を半分ずつ混ぜる
+function mixColor(a, b) {
+  const half = (shift) => {
+    const av = (a >> shift) & 0xff;
+    const bv = (b >> shift) & 0xff;
+    return Math.round((av + bv) / 2) << shift;
+  };
+  return half(16) | half(8) | half(0);
+}
 
 function mergeDrop(base, extra) {
   const drop = {};
@@ -408,6 +458,10 @@ function armored(base, armorId, id, name) {
     id,
     name,
     armor: armorId,
+    // 装甲の色をかぶせる。元の色（索敵ゾンビの青など）と混ぜて、
+    // 「銀装甲の索敵ゾンビ」も見分けがつくようにする
+    tint: base.tint ? mixColor(base.tint, bonus.tint) : bonus.tint,
+    animRate: (base.animRate ?? 1) * bonus.animRate,
     hp: base.hp + bonus.hp,
     // 装甲ゾンビの殴りは8。もともとそれより重いミュータントはそのまま
     damage: Math.max(base.damage, bonus.damage),

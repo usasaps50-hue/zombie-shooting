@@ -292,7 +292,7 @@ export class Avatar {
     } else if (name === 'swap') {
       armR += (1 - smooth(t)) * 1.0;
     } else if (name === 'spin') {
-      // ローリングスマッシュ。体ごと2回転しながらシャベルを振り回す
+      // ローリングスマッシュ。体ごと2回転しながら斧を振り回す
       armR = -1.55;
       armRz = -1.15;
       armL = -0.9;
@@ -350,7 +350,7 @@ export class Avatar {
     // 拡声器を持っているだけのときも、少し高く構えさせる
     if (megaphone && name !== 'shout') armR -= 0.35;
     if (knife && name !== 'swing') armR += 0.35;
-    // 杖はシャベルと同じで、斜めに立てて持つ
+    // 杖は斧と同じで、斜めに立てて持つ
     if (rod && name !== 'cast' && name !== 'rally') {
       armR = -0.6;
       armRz = -0.4;

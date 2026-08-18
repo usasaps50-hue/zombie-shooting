@@ -39,6 +39,9 @@ const PROPS = {
   ak47: { url: 'assets/models/zombiekit/Weapons/glTF/Rifle.gltf', length: 0.86, lift: 0.08 },
   knife: { url: 'assets/models/zombiekit/Weapons/glTF/Knife.gltf', length: 0.46, lift: 0.03 },
   spear: { url: 'assets/models/zombiekit/Weapons/glTF/Spear.gltf', length: 1.4, lift: 0.05 },
+  // 斧。仲間から見えているのと同じモデルを、自分の手元にも出す
+  shovel: { url: 'assets/models/zombiekit/Weapons/glTF/Axe.gltf', length: 0.86, lift: 0.04 },
+  hammer: { url: 'assets/models/zombiekit/Weapons/glTF/WoodenBat_Barbed.gltf', length: 0.9, lift: 0.04 },
 };
 
 // id -> { scene, length }
@@ -174,6 +177,39 @@ const SCENERY = {
     width: ROAD_TILE, color: 0x5a5e66,
   },
   tyres: { url: 'assets/models/zombiekit/Environment/glTF/Wheels_Stack.gltf', kind: 'gltf' },
+  chest: { url: 'assets/models/zombiekit/Environment/glTF/Chest.gltf', kind: 'gltf' },
+  chestSpecial: { url: 'assets/models/zombiekit/Environment/glTF/Chest_Special.gltf', kind: 'gltf' },
+  townSign: { url: 'assets/models/zombiekit/Environment/glTF/TownSign.gltf', kind: 'gltf' },
+  kitLamp: { url: 'assets/models/zombiekit/Environment/glTF/StreetLights.gltf', kind: 'gltf' },
+  roadTurn: { url: 'assets/models/zombiekit/Environment/glTF/Street_Turn.gltf', kind: 'gltf' },
+
+  // ---- 待機場のキャンプ道具（サバイバルパック）----
+  // どれもセンチで作られていて、素材に色が付いている。
+  // 塗りつぶさず（keepMaterial）、ゲームでの高さだけ合わせる
+  tent: { url: 'assets/models/survival/FBX/Tent.fbx', kind: 'fbx', height: 2.3, keepMaterial: true },
+  bonfire: { url: 'assets/models/survival/FBX/Bonfire_Fire.fbx', kind: 'fbx', height: 1.15, keepMaterial: true },
+  woodLog: { url: 'assets/models/survival/FBX/WoodLog.fbx', kind: 'fbx', height: 0.5, keepMaterial: true },
+  trashcan: { url: 'assets/models/survival/FBX/Trashcan.fbx', kind: 'fbx', height: 1.0, keepMaterial: true },
+  propaneTank: { url: 'assets/models/survival/FBX/PropaneTank.fbx', kind: 'fbx', height: 0.85, keepMaterial: true },
+  gasCan: { url: 'assets/models/survival/FBX/GasCan.fbx', kind: 'fbx', height: 0.5, keepMaterial: true },
+  radio: { url: 'assets/models/survival/FBX/Radio.fbx', kind: 'fbx', height: 0.42, keepMaterial: true },
+  backpack: { url: 'assets/models/survival/FBX/Backpack.fbx', kind: 'fbx', height: 0.62, keepMaterial: true },
+  firstAid: { url: 'assets/models/survival/FBX/FirstAidKit.fbx', kind: 'fbx', height: 0.34, keepMaterial: true },
+  torchFire: { url: 'assets/models/survival/FBX/WoodenTorch_Fire.fbx', kind: 'fbx', height: 1.5, keepMaterial: true },
+  pot: { url: 'assets/models/survival/FBX/Pot.fbx', kind: 'fbx', height: 0.4, keepMaterial: true },
+  waterBottle: { url: 'assets/models/survival/FBX/WaterBottle_1.fbx', kind: 'fbx', height: 0.32, keepMaterial: true },
+
+  // ---- 待機場の家（色つきの建物パック）----
+  // 廃都市のビルとは別のパック。こちらは色が付いているので、そのまま使う
+  house1: { url: 'assets/models/buildings-simple/FBX/House1.fbx', kind: 'fbx', height: 4.6, keepMaterial: true },
+  house2: { url: 'assets/models/buildings-simple/FBX/House2.fbx', kind: 'fbx', height: 4.2, keepMaterial: true },
+  block1S: { url: 'assets/models/buildings-simple/FBX/Building1_Small.fbx', kind: 'fbx', height: 6.6, keepMaterial: true },
+  block1L: { url: 'assets/models/buildings-simple/FBX/Building1_Large.fbx', kind: 'fbx', height: 8.6, keepMaterial: true },
+  block2S: { url: 'assets/models/buildings-simple/FBX/Building2_Small.fbx', kind: 'fbx', height: 6.8, keepMaterial: true },
+  block2L: { url: 'assets/models/buildings-simple/FBX/Building2_Large.fbx', kind: 'fbx', height: 8.8, keepMaterial: true },
+  block3S: { url: 'assets/models/buildings-simple/FBX/Building3_Small.fbx', kind: 'fbx', height: 7.2, keepMaterial: true },
+  block3B: { url: 'assets/models/buildings-simple/FBX/Building3_Big.fbx', kind: 'fbx', height: 9.4, keepMaterial: true },
+  block4: { url: 'assets/models/buildings-simple/FBX/Building4.fbx', kind: 'fbx', height: 8.0, keepMaterial: true },
 };
 
 // id -> { object, size }
@@ -282,6 +318,8 @@ const CLIPS = {
   attack: ['Punch', 'Idle_Attack'],
   hit: ['HitReact'],
   death: ['Death'],
+  // 壁を這い上がるときの、四つんばいの動き
+  crawl: ['Crawl', 'Walk'],
   emerge: ['Crawl', 'Idle'],
   burrow: ['Crawl', 'Idle'],
   charge: ['Jump_Idle', 'Idle'],
@@ -381,13 +419,21 @@ export async function preloadModels() {
             : cfg.height ? cfg.height / Math.max(0.001, raw.y)
               : (cfg.scale ?? 0.01)
         );
-        // 道路パックには色が入っていないので、こちらで塗る
+        // 道路パックには色が入っていないので、こちらで塗る。
+        // キャンプ道具や家（keepMaterial）は、素材にちゃんと色が付いているので
+        // その色をそのまま使い、材質だけ他と同じ種類にそろえる
         obj.traverse((o) => {
-          if (o.isMesh) {
-            o.material = new THREE.MeshStandardMaterial({
-              color: cfg.color ?? 0x6b7078, roughness: 0.85, metalness: 0.1,
-            });
+          if (!o.isMesh) return;
+          if (cfg.keepMaterial) {
+            o.material = [o.material].flat().map((m) => new THREE.MeshStandardMaterial({
+              color: m.color ?? 0xffffff, map: m.map ?? null, roughness: 0.9, metalness: 0,
+            }));
+            if (o.material.length === 1) [o.material] = o.material;
+            return;
           }
+          o.material = new THREE.MeshStandardMaterial({
+            color: cfg.color ?? 0x6b7078, roughness: 0.85, metalness: 0.1,
+          });
         });
       } else {
         obj = (await loader.loadAsync(cfg.url)).scene;
@@ -483,7 +529,9 @@ export class GltfCharacter {
       this.current.action.fadeOut(0.15);
     }
     next.action.reset();
-    next.action.setEffectiveTimeScale(name === 'walk' ? this.walkScale * (this._walkRate ?? 1) : 1);
+    // 歩きと這いは、種類ごとの速さ（animRate）に合わせて再生を速くする
+    const paced = name === 'walk' || name === 'crawl';
+    next.action.setEffectiveTimeScale(paced ? this.walkScale * (this._walkRate ?? 1) : 1);
     next.action.fadeIn(0.15).play();
     this.current = next;
     this.mode = name;
@@ -502,8 +550,9 @@ export class GltfCharacter {
   }
 
   set walkRate(rate) {
+    if (this._walkRate === rate) return;
     this._walkRate = rate;
-    if (this.mode === 'walk' && this.current) {
+    if ((this.mode === 'walk' || this.mode === 'crawl') && this.current) {
       this.current.action.setEffectiveTimeScale(this.walkScale * rate);
     }
   }

@@ -17,14 +17,15 @@ const OPEN_RADIUS = 10;
 // 大通りの幅。道路タイルの車道ぶん
 const ROAD_HALF = 4.2;
 // 坂を歩いて上れるように、見えない段をいくつに割るか
-const RAMP_STEPS = 6;
+const RAMP_STEPS = 14;
 // 陸橋を置く場所（南の大通り）。ここには道路タイルを敷かない
 const BRIDGE_TILES = [-8, -16, -24];
-// 陸橋の高さ。橋げたの上と、土台の段
-const BRIDGE_DECK = 3.0;
-const BRIDGE_BASE = 0.48;
+// 道路タイルの厚み。陸橋のふもとは、これと同じ高さにそろえる
+const ROAD_TOP = 0.12;
+// 測れなかったときの、橋げたの上の高さ
+const BRIDGE_DECK = 2.2;
 // 橋げたの幅の半分。素材の車道ぶん
-const BRIDGE_HALF = 2.7;
+const BRIDGE_HALF = 2.05;
 
 export function createWorld() {
   const scene = new THREE.Scene();
@@ -137,18 +138,18 @@ export function createWorld() {
   }
 
   // ---- 陸橋。南の大通りが、ここだけ持ち上がっている ----
-  // 上は地面より3m高いので、タイタンの衝撃波が足元をすり抜ける。
-  // 見た目は素材の橋そのまま。坂は当たり判定が箱だと登れないので、
-  // 見えない段を6つ重ねて、歩いて上がれるようにしてある
+  // 上は地面より2mほど高いので、タイタンの衝撃波が足元をすり抜ける。
+  //
+  // 見た目は素材の橋そのまま。当たり判定は箱しか使えないので、
+  // 橋の路面を上から線で測って、その高さの見えない段をならべる。
+  // こうすると、坂の傾きが変わっても勝手についてくる
   function overpass() {
     if (!hasScenery('bridge') || !hasScenery('bridgeRamp')) return;
     const half = ROAD_TILE / 2;
     const zs = BRIDGE_TILES;
-    const near = Math.max(...zs) + half;
-    const far = Math.min(...zs) - half;
-    claim(-half, half, far, near);
+    claim(-half, half, Math.min(...zs) - half, Math.max(...zs) + half);
 
-    // 素材の底が地面より下に沈んでいるぶん、持ち上げてから置く
+    // 底を地面にそろえて置く。高さの調整はあとでまとめてやる
     const put = (id, z, yaw) => {
       const o = makeScenery(id);
       o.position.set(0, 0, z);
@@ -156,25 +157,62 @@ export function createWorld() {
       o.updateMatrixWorld(true);
       box3.setFromObject(o);
       o.position.y = -box3.min.y;
+      // 動かしたら必ず入れ直す。これを忘れると、あとで高さを測るときに
+      // 動かす前の場所を測ってしまう
+      o.updateMatrixWorld(true);
       scene.add(o);
+      return o;
     };
     // 橋は素材のままで z 方向。坂は x 方向に作られているので90度まわす
-    put('bridgeRamp', zs[0], -Math.PI / 2);
-    put('bridge', zs[1], 0);
-    put('bridgeRamp', zs[2], Math.PI / 2);
+    const pieces = [
+      put('bridgeRamp', zs[0], -Math.PI / 2),
+      put('bridge', zs[1], 0),
+      put('bridgeRamp', zs[2], Math.PI / 2),
+    ];
 
-    // 土台。まわりからは0.48mの段なので、そのまま歩いて乗れる
-    for (const z of zs) addHiddenBox(0, 0, z, ROAD_TILE, BRIDGE_BASE, ROAD_TILE);
-    // 橋げたの上
-    addHiddenBox(0, 0, zs[1], BRIDGE_HALF * 2, BRIDGE_DECK, ROAD_TILE);
+    // 真上から線を下ろして、その場所の路面の高さを測る
+    const ray = new THREE.Raycaster();
+    const down = new THREE.Vector3(0, -1, 0);
+    const surfaceAt = (object, x, z) => {
+      ray.set(new THREE.Vector3(x, 30, z), down);
+      const hit = ray.intersectObject(object, true)[0];
+      return hit ? hit.point.y : null;
+    };
 
-    // 坂の見えない段。橋に近いほど高い
+    // 坂のふもとが道路とぴったり同じ高さになるまで、橋ぜんぶを沈める。
+    // 素材は土台のぶん高く作られているので、そのままだと段差ができる
+    const footTop = surfaceAt(pieces[0], 0, zs[0] + half - 0.3);
+    const sink = footTop === null ? 0 : footTop - ROAD_TOP;
+    for (const o of pieces) {
+      o.position.y -= sink;
+      o.updateMatrixWorld(true);
+    }
+
+    // 橋げたの上。まん中がすこし盛り上がっているので、2段に分けて合わせる
+    const deckZ = zs[1];
+    const crown = surfaceAt(pieces[1], 0, deckZ) ?? BRIDGE_DECK;
+    const edge = surfaceAt(pieces[1], 1.5, deckZ) ?? crown;
+    addHiddenBox(0, 0, deckZ, 2.0, crown, ROAD_TILE);
+    for (const side of [-1, 1]) {
+      addHiddenBox(side * 1.55, 0, deckZ, 1.1, edge, ROAD_TILE);
+    }
+    const deckTop = crown;
+
+    // 坂。路面を細かく測って、その高さの段をならべる
     const stepDepth = ROAD_TILE / RAMP_STEPS;
-    for (const [rampZ, toBridge] of [[zs[0], -1], [zs[2], 1]]) {
-      for (let i = 0; i < RAMP_STEPS; i++) {
-        const h = BRIDGE_BASE + (BRIDGE_DECK - BRIDGE_BASE) * ((i + 1) / RAMP_STEPS);
-        const offset = -half + stepDepth * (i + 0.5);
-        addHiddenBox(0, 0, rampZ + toBridge * offset, BRIDGE_HALF * 2, h, stepDepth);
+    pieces.forEach((piece, i) => {
+      if (i === 1) return;
+      const rampZ = zs[i];
+      // 橋のほうへ向かう向き
+      const toBridge = Math.sign(deckZ - rampZ);
+      for (let s = 0; s < RAMP_STEPS; s++) {
+        const offset = -half + stepDepth * (s + 0.5);
+        const z = rampZ + toBridge * offset;
+        // 段の中で一番高いところに合わせる（低いと路面にめり込む）
+        const a = surfaceAt(piece, 0, z - stepDepth * 0.4 * toBridge);
+        const b = surfaceAt(piece, 0, z + stepDepth * 0.4 * toBridge);
+        const h = Math.max(a ?? 0, b ?? 0, ROAD_TOP);
+        addHiddenBox(0, 0, z, BRIDGE_HALF * 2, h, stepDepth);
       }
       // 坂の下は、車や小物を置かないように空けておく
       const footZ = rampZ - toBridge * (half + 1.6);
@@ -182,9 +220,9 @@ export function createWorld() {
       // ゾンビが上ってこられるよう、上り口と上の場所を覚えさせる
       stairPoints.push({
         bottom: new THREE.Vector3(0, 0, footZ),
-        top: new THREE.Vector3(0, BRIDGE_DECK, zs[1]),
+        top: new THREE.Vector3(0, deckTop, deckZ),
       });
-    }
+    });
   }
 
   // ---- 外周。見えない壁で場外へ出られないようにする ----
@@ -208,6 +246,24 @@ export function createWorld() {
   // 給水塔。遠くからも見える目印なので、ビルより先に場所を取る
   if (hasScenery('waterTower')) {
     place(makeScenery('waterTower'), 21.5, -21.5, 0.4, { solid: true, margin: 0.4 });
+  }
+
+  // ---- 大きい遮蔽物。大通りの歩道ぎわに、コンテナを道と平行に並べる ----
+  // ビルより先に置く。あとから置くと、ビルの列にはじかれて1つも入らない。
+  // 車は車道（x=±2.3）に置くので、コンテナはその外がわ、歩道の上に置く
+  const bigCover = ['container', 'containerGreen'].filter(hasScenery);
+  if (bigCover.length) {
+    let n = 0;
+    for (let d = 12; d < ARENA - 7; d += 7.5) {
+      for (const [x, z, yaw] of [
+        [-5.6, d, Math.PI / 2], [5.6, -d, Math.PI / 2],
+        [d, 5.6, 0], [-d, -5.6, 0],
+      ]) {
+        if (rand() < 0.35) continue;
+        place(makeScenery(bigCover[n++ % bigCover.length]), x, z, yaw,
+          { solid: true, margin: 0.5 });
+      }
+    }
   }
 
   // ---- ビル。街区のふちに、肩を並べるように建てる ----
@@ -284,13 +340,14 @@ export function createWorld() {
   if (carIds.length) {
     const spots = [];
     for (let d = OPEN_RADIUS + 3; d < ARENA - 5; d += 6.5) {
-      spots.push([-2.6, d, 0.06], [2.6, -d, Math.PI + 0.04]);
-      spots.push([d, 2.6, Math.PI / 2 + 0.05], [-d, -2.6, -Math.PI / 2 + 0.03]);
+      // 車道の内がわの車線。歩道ぎわのコンテナとぶつからない位置
+      spots.push([-2.3, d, 0.06], [2.3, -d, Math.PI + 0.04]);
+      spots.push([d, 2.3, Math.PI / 2 + 0.05], [-d, -2.3, -Math.PI / 2 + 0.03]);
     }
     spots.forEach(([x, z, yaw], i) => {
       // ぜんぶ埋めると通れなくなるので、3台に2台くらいにする
       if (i % 3 === 2) return;
-      place(makeScenery(carIds[i % carIds.length]), x, z, yaw, { solid: true, margin: 0.6 });
+      place(makeScenery(carIds[i % carIds.length]), x, z, yaw, { solid: true, margin: 0.45 });
     });
   }
 
@@ -314,26 +371,20 @@ export function createWorld() {
     if (hasScenery(id)) place(makeScenery(id), x, z, yaw, { solid: false, margin: 0.3 });
   }
 
-  // 遮蔽物になる大きめの置物。広場と大通りに、隠れられるように置く
-  const coverIds = ['container', 'containerGreen', 'barrier', 'plasticBarrier'].filter(hasScenery);
-  if (coverIds.length) {
-    const pickCover = () => coverIds[Math.floor(rand() * coverIds.length)];
-    // 広場のまわり
-    for (let i = 0; i < 12; i++) {
+  // 遮蔽物。隠れて撃てるように、当たり判定つきで置く。
+  // 広場のまわりは、車や街灯であいだが狭いので、小さい車止めだけにする。
+  // 大きいコンテナを混ぜると1つも入らず、広場がまる裸になってしまう
+  const smallCover = ['barrier', 'plasticBarrier', 'tyres', 'barrel'].filter(hasScenery);
+  if (smallCover.length) {
+    for (let i = 0; i < 16; i++) {
       const a = rand() * Math.PI * 2;
-      const d = 4.5 + rand() * (OPEN_RADIUS - 5.5);
-      place(makeScenery(pickCover()), Math.sin(a) * d, Math.cos(a) * d,
-        rand() * Math.PI * 2, { solid: true, margin: 1.4 });
-    }
-    // 大通りぞい。道をふさがないよう端に寄せる
-    for (let d = 13; d < ARENA - 6; d += 7) {
-      for (const [x, z] of [[-3.1, d], [3.1, -d], [d, 3.1], [-d, -3.1]]) {
-        if (rand() < 0.45) continue;
-        place(makeScenery(pickCover()), x, z, rand() * Math.PI * 2,
-          { solid: true, margin: 0.8 });
-      }
+      const d = 4.4 + rand() * (OPEN_RADIUS - 4.0);
+      place(makeScenery(smallCover[Math.floor(rand() * smallCover.length)]),
+        Math.sin(a) * d, Math.cos(a) * d, rand() * Math.PI * 2,
+        { solid: true, margin: 0.9 });
     }
   }
+
 
   // 散らばった小物。当たり判定はつけない
   const debrisIds = ['cinder', 'pallet', 'palletBroken', 'trash', 'trash2', 'pipes', 'couch', 'tyres', 'barrel', 'cone', 'hydrant']

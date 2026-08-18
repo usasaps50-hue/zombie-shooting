@@ -27,7 +27,7 @@ export const ITEMS = {
   },
   shovel: {
     id: 'shovel',
-    name: 'シャベル',
+    name: '斧',
     kind: 'melee',
     damage: 10,
     swingTime: 0.28,
@@ -36,7 +36,7 @@ export const ITEMS = {
     arc: Math.PI / 3,
     // 振っても、ほとんど音がしない
     noise: 3,
-    icon: '🪏',
+    icon: '🪓',
   },
   hammer: {
     id: 'hammer',

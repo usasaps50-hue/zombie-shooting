@@ -152,7 +152,7 @@ let place = 'lobby';
 let hubPlayer = null;
 let hubTime = 0;
 let usePressed = false;
-// 最初はシャベルだけ。ピストルもクラスも待機場のお店で買う
+// 最初は斧だけ。ピストルもクラスも待機場のお店で買う
 let loadout = { passphrase: randomPass(), jobId: 'soldier', items: ['shovel'] };
 
 const shop = new Shop(ITEM_ICONS, {
@@ -228,7 +228,7 @@ function makeSkill(loadout) {
     }
     if (kind === 'rollingSmash') {
       return {
-        kind, name: 'ローリングスマッシュ', itemName: 'シャベル',
+        kind, name: 'ローリングスマッシュ', itemName: '斧',
         charge: 0, need: ROLLING_SMASH.need, ready: false,
       };
     }
@@ -656,7 +656,7 @@ function damageEnemy(enemy, amount, now, source = null, by = net.id, part = null
   const mine = by === net.id;
   if (mine) {
     game?.ult.add('damage', dealt);
-    // Lv5のシャベル：ローリングスマッシュのときだけ、与ダメージの半分を吸収する
+    // Lv5の斧：ローリングスマッシュのときだけ、与ダメージの半分を吸収する
     if (source?.lifestealNow && source?.effects?.lifesteal && game) {
       game.player.heal(dealt * source.effects.lifesteal);
     }
@@ -1269,7 +1269,7 @@ function swing(item) {
   const flat = camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize();
   effects.swingArc(new THREE.Vector3(origin.x, 1.1, origin.z), game.player.yaw, item.range, item.arc);
   sfx.play('swing');
-  // シャベルはほとんど音がしないので、すぐ近くにしか気づかれない
+  // 斧はほとんど音がしないので、すぐ近くにしか気づかれない
   makeNoise(origin.clone(), item.noise ?? 0, performance.now() / 1000);
 
   const { player } = game;
@@ -1317,7 +1317,7 @@ function chargeSkill(item) {
   if (skill.ready) hud.setToast(`${skill.name}が使える！`, 1.6);
 }
 
-// シャベルLv3のスキル。回転して全方向のゾンビを巻き込む
+// 斧Lv3のスキル。回転して全方向のゾンビを巻き込む
 function useSkill() {
   const { player, weapons, skill } = game;
   if (!skill || player.downed) return;
@@ -1996,7 +1996,7 @@ function frame() {
     if (input.consumeSkill()) useSkill();
     if (input.fire && !player.downed) weapons.trigger();
 
-    // 持っている武器のレベル特典（シャベルLv2の移動速度など）
+    // 持っている武器のレベル特典（斧Lv2の移動速度など）
     player.speedBonus = (weapons.current?.effects?.speedBonus ?? 0) + (game.bonus.speedBonus ?? 0);
 
     const held = player.downed ? null : weapons.current?.id ?? null;

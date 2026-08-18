@@ -75,7 +75,7 @@ const tmpHit = new THREE.Vector3();
 export const NET_ENEMY_IDS = Object.keys(ENEMIES);
 export const NET_MODES = [
   'idle', 'walk', 'attack', 'hit', 'death', 'jump',
-  'charge', 'burrow', 'emerge', 'shoot', 'revive',
+  'charge', 'burrow', 'emerge', 'shoot', 'revive', 'crawl',
 ];
 const NET_VISIBLE = 1;
 const NET_LABEL = 2;
@@ -181,17 +181,20 @@ export class Enemy {
     this.slamFrom = new THREE.Vector3();
     this.slamTo = new THREE.Vector3();
     // 天井ゾンビ：壁を登っているときの状態
-    //  null（地上）／'toWall'（壁へ向かう）／'up'（登る）／'roof'（屋上）／'drop'（落下）
+    //  null（地上）／'toWall'（壁へ向かう）／'up'（這い上がる）
+    //  ／'cling'（壁で待つ）／'drop'（落下）
     this.climbState = null;
     this.climbTop = 0;
     this.climbFace = new THREE.Vector3();
-    // 登りきったあと、屋上の内側へ入る向き
+    // 壁に張りついて待つ高さ
+    this.clingY = 0;
+    // 壁のほうを向く向き
     this.climbInX = 0;
     this.climbInZ = 0;
     this.climbUntil = 0;
     this.nextClimbAt = 0;
-    this.roofBest = Infinity;
-    this.roofStuckAt = 0;
+    // いま壁ばりの姿勢になっているか
+    this.wallPose = false;
     // 叫びゾンビの声で足が速くなっている間の、終わる時刻
     this.hasteUntil = 0;
     this.hasted = false;
@@ -251,6 +254,8 @@ export class Enemy {
       this.zombie = new Zombie(this.def.skin, this.def.armor, { outfit: this.def.outfit });
     }
     this.zombie.walkRate = this.def.animRate ?? 1;
+    // 作り直したモデルはまっすぐ立っているので、壁ばりの姿勢も解けている
+    this.wallPose = false;
     // 同じモデルでも、縦横を変えるだけで体つきの違いが出せる
     if (this.def.stretch) this.zombie.root.scale.set(...this.def.stretch);
     this.root.add(this.zombie.root);
@@ -339,6 +344,7 @@ export class Enemy {
       // 壁の途中や屋上で倒したときは、宙に浮いたままにならないよう地面へ落とす
       if (this.climbState) {
         this.climbState = null;
+        this.#setWallPose(false);
         this.root.position.y = 0;
       }
       this.label.sprite.visible = false;
@@ -779,6 +785,9 @@ export class Enemy {
     }
     this.climbFace.set(fx, 0, fz);
     this.climbTop = wall.max.y;
+    // 屋上までは登らず、そのすこし下で張りついて待つ。
+    // 低いビルでも、飛び降りる高さが出るところまでは登る
+    this.clingY = Math.max(3.5, wall.max.y - 1.2);
   }
 
   #giveUpClimb(now) {
@@ -786,7 +795,19 @@ export class Enemy {
     this.nextClimbAt = now + 4;
   }
 
-  // 天井ゾンビ。壁を這い上がって屋上から飛び降りる。
+  // 壁に張りついている間の姿勢。
+  // 這うモーションは「頭が前（+Z）・お腹が下」の腹ばいなので、
+  // 前後をひっくり返してから起こすと、頭が上・お腹が壁のほうを向く
+  #setWallPose(on) {
+    if (this.wallPose === on) return;
+    this.wallPose = on;
+    if (on) this.zombie.root.rotation.set(-Math.PI / 2, 0, Math.PI);
+    else this.zombie.root.rotation.set(0, 0, 0);
+    // 壁にぴったり寄せる
+    this.zombie.root.position.z = on ? -0.4 : 0;
+  }
+
+  // 天井ゾンビ。壁を這い上がって、相手が近づくまで壁で待つ。
   // 自分で動きを決めたときは true を返す（false なら普通の追いかけに戻す）
   #climberThink(dt, now, pos, player, sees, colliders, structures, onSlam, onSlamAim, onHitPlayer) {
     const def = this.def;
@@ -799,6 +820,7 @@ export class Enemy {
       // 弧を描いて落ちる。飛び出してから落下する形
       pos.y = THREE.MathUtils.lerp(this.slamFrom.y, this.slamTo.y, p * p)
         + Math.sin(p * Math.PI) * def.dropHeight;
+      this.#setWallPose(false);
       this.zombie.setMode('walk');
       if (p < 1) return true;
       pos.y = this.slamTo.y;
@@ -810,23 +832,20 @@ export class Enemy {
       return true;
     }
 
-    // 壁を登っている最中
+    // 壁を這い上がっている最中
     if (this.climbState === 'up') {
       pos.x = this.climbFace.x;
       pos.z = this.climbFace.z;
       pos.y += def.climbSpeed * dt;
-      // 壁のほうを向く
-      this.#face(Math.atan2(this.climbInX, this.climbInZ), dt * 3);
-      this.zombie.setMode('walk');
-      if (pos.y >= this.climbTop) {
-        // 屋上へ乗り上げる。少し内側へ入れて、足場に乗せる
-        pos.y = this.climbTop;
-        pos.x += this.climbInX * 1.5;
-        pos.z += this.climbInZ * 1.5;
-        this.climbState = 'roof';
-        this.climbUntil = now + 9;
-        this.roofBest = Infinity;
-        this.roofStuckAt = now;
+      // 壁のほうを向いて、四つんばいで這う
+      this.#face(Math.atan2(this.climbInX, this.climbInZ), dt * 6);
+      this.#setWallPose(true);
+      this.zombie.setMode('crawl');
+      if (pos.y >= this.clingY) {
+        // 登りきった。ここから相手が来るまで張りついて待つ
+        pos.y = this.clingY;
+        this.climbState = 'cling';
+        this.climbUntil = now + def.clingTime;
       } else if (now > this.climbUntil) {
         // 何かおかしくて登りきれない。あきらめて地面へ戻る
         pos.y = 0;
@@ -835,42 +854,37 @@ export class Enemy {
       return true;
     }
 
-    // 屋上を歩いて、相手の真上へ回りこむ
-    if (this.climbState === 'roof') {
-      // 相手を見失ったか、屋上で手間取ったら、そこから飛び降りる
-      if (!sees || now > this.climbUntil) {
-        this.#dropAtPlayer(player, now, onSlamAim, colliders);
-        return true;
-      }
-      const to = player.position.clone().sub(pos).setY(0);
-      const flat = to.length();
-      this.#face(Math.atan2(-to.x, -to.z), dt);
-      // 十分に近づいたら飛び降りる
+    // 壁に張りついたまま、相手が真下へ来るのを待つ
+    if (this.climbState === 'cling') {
+      pos.x = this.climbFace.x;
+      pos.z = this.climbFace.z;
+      pos.y = this.clingY;
+      this.#face(Math.atan2(this.climbInX, this.climbInZ), dt * 6);
+      this.#setWallPose(true);
+      // その場で少しだけ這って、じっとしていないように見せる
+      this.zombie.setMode('crawl');
+      this.zombie.walkRate = 0.35;
+      this.state = 'chase';
+
+      // 相手がこの距離まで来たら、頭上から落ちてくる
+      const flat = player
+        ? Math.hypot(player.position.x - pos.x, player.position.z - pos.z)
+        : Infinity;
       if (flat <= def.dropRange) {
+        this.zombie.walkRate = def.animRate ?? 1;
         this.#dropTo(player.position.x, player.position.z, now, onSlamAim, colliders);
         return true;
       }
-      to.divideScalar(flat || 1);
-      this.zombie.setMode('walk');
-      const before = pos.y;
-      this.#step(to.x * def.chaseSpeed * dt, to.z * def.chaseSpeed * dt, colliders, structures);
-      // 屋上から落ちかけたら、そこで飛び降りる
-      if (pos.y < before - 0.8) {
-        this.#dropTo(player.position.x, player.position.z, now, onSlamAim, colliders);
-        return true;
-      }
-      // 屋上には瓦礫が乗っていて、進めなくなることがある。
-      // しばらく近づけていなければ、待たずに飛び降りる
-      if (flat < this.roofBest - 0.5) {
-        this.roofBest = flat;
-        this.roofStuckAt = now;
-      } else if (now - this.roofStuckAt > 2.5) {
+      // いつまでも来ないときは、しびれを切らして降りる
+      if (now > this.climbUntil) {
+        this.zombie.walkRate = def.animRate ?? 1;
         this.#dropAtPlayer(player, now, onSlamAim, colliders);
       }
       return true;
     }
 
     // ---- ここからは地上 ----
+    this.#setWallPose(false);
     if (this.climbState === 'toWall') {
       const to = this.climbFace.clone().sub(pos).setY(0);
       const flat = to.length();
@@ -1275,6 +1289,8 @@ export class Enemy {
     this.nextShriekAt = 0;
     this.climbState = null;
     this.nextClimbAt = 0;
+    // 壁ばりの姿勢のまま使い回さないよう、立ち姿に戻しておく
+    this.#setWallPose(false);
     this.burrowUsed = false;
     this.climbing = null;
     this.revived = false;
@@ -1353,7 +1369,11 @@ export class Enemy {
     }
 
     const mode = NET_MODES[row[6]];
-    if (mode) this.zombie.setMode(mode);
+    if (mode) {
+      // 這っているのは壁を登っているときだけ。子の画面でも壁ばりの姿勢にする
+      this.#setWallPose(mode === 'crawl');
+      this.zombie.setMode(mode);
+    }
 
     const hp = row[7];
     const maxHp = row[8];
