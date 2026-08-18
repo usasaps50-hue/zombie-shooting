@@ -63,6 +63,7 @@ export class GltfAvatar {
     this.bodyMats = [];
     model.traverse((o) => {
       if (o.name === 'Head') this.head = o;
+      if (o.name === 'Torso') this.torso = o;
       if (!o.isMesh) return;
       o.castShadow = true;
       o.receiveShadow = true;
@@ -173,9 +174,12 @@ export class GltfAvatar {
   update(dt, { anim = { name: 'idle', t: 0 }, speed = 0, pitch = 0 } = {}) {
     this.#play(this.#clipFor(anim.name, speed));
     this.mixer.update(dt);
-    // 上下の狙いは、頭だけ少し向ける
-    if (this.head && !this.downed) {
-      this.head.rotation.x = THREE.MathUtils.clamp(-pitch * 0.4, -0.5, 0.5);
+    // どこを狙っているかが、まわりから見て分かるように顔を動かす。
+    // 上下は頭で、そのうちの一部を胸でも受けると、体ごと向いて見える
+    if (!this.downed) {
+      const look = THREE.MathUtils.clamp(-pitch, -1.2, 1.2);
+      if (this.head) this.head.rotation.x = look * 0.7;
+      if (this.torso) this.torso.rotation.x = look * 0.25;
     }
   }
 

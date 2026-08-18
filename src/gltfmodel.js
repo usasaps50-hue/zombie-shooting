@@ -17,11 +17,36 @@ const texLoader = new THREE.TextureLoader();
 // id -> { scene, animations, height }
 const loaded = new Map();
 
+// 人のモデルには、武器がぜんぶ付いた状態で入っている（表示を切り替えて持ち替える）。
+// 背丈を測るときにこれを数えてしまうと、頭より高い槍や、
+// 足より下に垂れたギターのぶんまで「背丈」に入ってしまい、
+// つじつまを合わせようとして体が縮む
+const CARRIED = new Set([
+  'Axe', 'Guitar', 'Knife', 'Pistol', 'Rifle', 'Shotgun', 'SMG',
+  'Spear', 'WoodenBat_Barbed', 'WoodenBat_Saw',
+]);
+
+const bodyBox = new THREE.Box3();
+const partBox = new THREE.Box3();
+
+// 武器を除いた「体だけ」の背丈。足元（原点）から頭のてっぺんまで
+function bodyHeight(scene) {
+  scene.updateMatrixWorld(true);
+  bodyBox.makeEmpty();
+  scene.traverse((o) => {
+    if (!o.isMesh || CARRIED.has(o.name)) return;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    partBox.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
+    bodyBox.union(partBox);
+  });
+  if (bodyBox.isEmpty()) return 1.8;
+  return Math.max(0.1, bodyBox.max.y - Math.min(0, bodyBox.min.y));
+}
+
 // 読み込む物の一覧。パスはページからの相対
 const SOURCES = {
   zombie: 'assets/models/zombiekit/Characters/glTF/Zombie_Basic.gltf',
   zombieChubby: 'assets/models/zombiekit/Characters/glTF/Zombie_Chubby.gltf',
-  zombieThin: 'assets/models/zombiekit/Characters/glTF/Zombie_Ribcage.gltf',
   // 人。武器が手に持たされた状態で入っているので、表示を切り替えて持ち替える
   human: 'assets/models/zombiekit/Characters/glTF/Characters_Matt.gltf',
   human2: 'assets/models/zombiekit/Characters/glTF/Characters_Sam.gltf',
@@ -345,12 +370,11 @@ export async function preloadModels() {
   const jobs = Object.entries(SOURCES).map(async ([id, url]) => {
     try {
       const gltf = await loader.loadAsync(url);
-      const box = new THREE.Box3().setFromObject(gltf.scene);
       loaded.set(id, {
         scene: gltf.scene,
         animations: gltf.animations,
         // 素の高さ。ゲーム側の背丈に合わせるときに使う
-        height: Math.max(0.1, box.max.y - box.min.y),
+        height: bodyHeight(gltf.scene),
       });
     } catch {
       // 読めなくても、手作りのモデルで遊べる

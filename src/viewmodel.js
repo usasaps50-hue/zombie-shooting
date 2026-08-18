@@ -377,20 +377,21 @@ export class ViewModel {
         mag.visible = !(drop > 0.95 && insert < 0.05);
       }
     } else if (name === 'swing') {
-      // 袈裟斬り。仲間から見えている動き（素材の Slash）と同じ順番で、
-      // 右上へ振りかぶってから、左下へ斜めに振り下ろす
+      // 上から下への振り下ろし。仲間から見えている動きが縦振りなので、
+      // 自分の手元も同じく、頭の上へ振りかぶって、まっすぐ下へ振り下ろす
       const raise = smooth(phase(t, 0, 0.24));
       const chop = smooth(phase(t, 0.24, 0.46));
       const back = smooth(phase(t, 0.5, 1));
       // 振りかぶっている量と、振り下ろしきった量
       const up = raise - chop;
       const down = chop - back;
-      m.position.x += up * 0.16 - down * 0.30;
-      m.position.y += up * 0.34 - down * 0.26;
-      m.position.z += -up * 0.10 - down * 0.06;
-      m.rotation.x += -up * 0.95 + down * 1.35;
-      m.rotation.y += up * 0.20 - down * 0.40;
-      m.rotation.z += up * 0.50 - down * 0.85;
+      // 横にはほとんど動かさず、上下と「柄の傾き」で振る
+      m.position.x += -up * 0.10 - down * 0.10;
+      m.position.y += up * 0.42 - down * 0.30;
+      m.position.z += -up * 0.12 - down * 0.10;
+      m.rotation.x += -up * 1.15 + down * 1.75;
+      m.rotation.y += up * 0.10 - down * 0.10;
+      m.rotation.z += -up * 0.20 - down * 0.10;
     } else if (name === 'cast') {
       // 杖を掲げて、先端の玉が光ってから振り下ろす
       const raise = smooth(phase(t, 0, 0.45));

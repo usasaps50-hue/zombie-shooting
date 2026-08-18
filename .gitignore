@@ -1,3 +1,7 @@
 node_modules/
 .DS_Store
 .claude/settings.local.json
+
+# Google ドライブから落としてきた素材の元フォルダ。
+# 使うぶんだけ assets/ に入れてあるので、元は上げない
+drive-download-*/

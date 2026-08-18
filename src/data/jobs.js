@@ -76,7 +76,7 @@ const NORMAL_ZOMBIE = {
   model: 'zombie',
   skin: 'green',
   // 外から持ってきたモデルを使うときの名前。読めていなければ手作りのほうで動く。
-  // 種類ごとに zombie（標準）/ zombieChubby（太め）/ zombieThin（やせ）を選ぶ。
+  // 種類ごとに zombie（標準）/ zombieChubby（太め）を選ぶ。
   // tint はモデルにかける色、animRate は手足を振る速さ
   gltf: 'zombie',
   tint: null,
@@ -113,10 +113,9 @@ const FAST_ZOMBIE = {
   id: 'fast',
   name: '俊足ゾンビ',
   skin: 'red',
-  // 肉が落ちたやせ型。赤黒くて、手足を速く振る
-  gltf: 'zombieThin',
+  // 肉が落ちて細い。赤黒くて、手足を速く振る
   tint: 0xd06a5a,
-  stretch: [0.94, 1.02, 0.94],
+  stretch: [0.88, 1.02, 0.88],
   hp: 50,
   sight: 20,
   walkSpeed: 2.0,
@@ -236,7 +235,6 @@ const SWARM_ZOMBIE = {
   name: '群れゾンビ',
   skin: 'swarm',
   // 小さくやせている。ちょこちょこと小刻みに走る
-  gltf: 'zombieThin',
   tint: 0xa8b878,
   animRate: 1.7,
   // 小さいので、モデル全体を縮める
@@ -262,8 +260,7 @@ const SHRIEKER_ZOMBIE = {
   name: '叫びゾンビ',
   skin: 'shrieker',
   behavior: 'shrieker',
-  // あばらの浮いた青白い体。落ち着きなく、せかせか動く
-  gltf: 'zombieThin',
+  // やせこけた青白い体。落ち着きなく、せかせか動く
   tint: 0xd8dcc0,
   animRate: 1.3,
   // やせこけて背だけ高い
@@ -298,7 +295,6 @@ const CLIMBER_ZOMBIE = {
   skin: 'climber',
   behavior: 'climber',
   // 影のような灰青。壁に張りつくので、暗い色にして見つけにくくする
-  gltf: 'zombieThin',
   tint: 0x6f7d8a,
   animRate: 1.15,
   // 手足が長く、ひょろりと背が高い
