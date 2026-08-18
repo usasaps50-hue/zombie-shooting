@@ -8,8 +8,10 @@ import {
   progress, levelOf, upgradeStatus, upgrade,
   classLevelOf, classStatus, upgradeClass,
   ownsItem, ownsJob, buyItem, buyJob, maxSlots, addCoins,
-  playerName,
+  playerName, ownsSkin, currentSkin, wearSkin, rollGacha,
 } from './progress.js';
+import { SKINS, RARITY, GACHA_COST, SKIN_BY_ID } from './data/skins.js';
+import { SkinPreview } from './skinpreview.js';
 import { netReady } from './data/netconfig.js';
 
 // 名前や合言葉をそのまま HTML に入れると、記号で表示が崩れる
@@ -41,6 +43,10 @@ export class Shop {
     this.closeBtn = document.getElementById('shop-close');
     this.kind = null;
     this.loadout = null;
+    // スキンショップの3Dプレビュー。開いたときに初めて作る
+    this.preview = null;
+    // いま見ているスキン
+    this.viewSkin = null;
 
     this.closeBtn.addEventListener('click', () => this.close());
   }
@@ -59,6 +65,7 @@ export class Shop {
   close() {
     this.el.classList.add('hidden');
     this.kind = null;
+    this.preview?.hide();
   }
 
   render() {
@@ -68,9 +75,12 @@ export class Shop {
       levelUp: () => this.#renderLevelUp(),
       battle: () => this.#renderBattle(),
       secret: () => this.#renderSecret(),
+      shopSkin: () => this.#renderSkins(),
     };
     this.listEl.innerHTML = '';
     this.coinsEl.textContent = `🪙 ${progress.coins}`;
+    // プレビューはスキンショップのときだけ出す
+    if (this.kind !== 'shopSkin') this.preview?.hide();
     // バトルゲートでは「出発する」が主役なので、閉じるボタンは控えめにする
     const gate = this.kind === 'battle';
     this.closeBtn.textContent = gate ? 'やめる' : '話を終える';
@@ -156,6 +166,73 @@ export class Shop {
         this.onChange();
       });
       if (jobLocked || (!owned && progress.coins < price)) row.classList.add('cant');
+    }
+  }
+
+  // ---- スキンショップ ----
+  // 上に3Dプレビュー、下に「ガチャを回す」と、持っているスキンの一覧。
+  // まだ持っていないスキンも「？？？」として並べて、何が残っているか分かるようにする
+  #renderSkins() {
+    this.titleEl.textContent = 'スキンショップ';
+    this.keeperEl.textContent = 'ノアさん';
+    const have = SKINS.filter((s) => ownsSkin(s.id)).length;
+    this.noteEl.textContent =
+      `${have} / ${SKINS.length} 種類を持っているよ。ガチャは1回 ${GACHA_COST} コイン。`
+      + 'まだ持っていないものだけが出るから、同じのは絶対に出ないよ。';
+
+    this.preview ??= new SkinPreview();
+    const wearing = currentSkin();
+    this.viewSkin = ownsSkin(this.viewSkin) ? this.viewSkin : wearing;
+    this.preview.show(this.viewSkin);
+
+    // ガチャのボタン
+    const done = have >= SKINS.length;
+    const canRoll = !done && progress.coins >= GACHA_COST;
+    this.#row(false, '<span class="shop-emoji">🎁</span>',
+      done ? 'ガチャ（コンプリート！）' : 'ガチャを回す',
+      done ? 'ぜんぶ集めたよ。おめでとう！'
+        : canRoll ? `まだ持っていないスキンが ${SKINS.length - have} 種類のこっているよ`
+          : `コインが ${GACHA_COST - progress.coins} 枚たりないよ`,
+      done ? '—' : `🪙${GACHA_COST}`,
+      () => {
+        const result = rollGacha();
+        if (result.error) {
+          this.noteEl.textContent = `${result.error}。`;
+          return;
+        }
+        const r = RARITY[result.skin.rarity];
+        this.viewSkin = result.skin.id;
+        this.render();
+        this.noteEl.textContent = `${r.name}の「${result.skin.name}」が出た！`;
+      }).classList.toggle('cant', done || !canRoll);
+
+    for (const skin of SKINS) {
+      const owned = ownsSkin(skin.id);
+      const on = skin.id === wearing;
+      const r = RARITY[skin.rarity];
+      const tag = `<span class="skin-rarity" style="background:${r.color}">${r.name}</span>`;
+      const row = this.#row(on, '<span class="shop-emoji">' + (owned ? '🧍' : '❔') + '</span>',
+        owned ? skin.name : '？？？',
+        owned ? `${tag}${this.viewSkin === skin.id ? '見ているところ' : 'えらぶと着られるよ'}`
+          : `${tag}ガチャで出るのを待とう`,
+        owned ? (on ? '着ている' : '着る') : '—',
+        () => {
+          if (!owned) {
+            this.noteEl.textContent = 'これはまだ持っていないよ。ガチャで当てよう。';
+            return;
+          }
+          // 1回目のタップで見る、着ているものをもう一度タップすると着替える
+          if (this.viewSkin !== skin.id) {
+            this.viewSkin = skin.id;
+            this.render();
+            return;
+          }
+          wearSkin(skin.id);
+          this.render();
+          this.onChange();
+          this.noteEl.textContent = `${skin.name}に着がえた！`;
+        });
+      row.classList.toggle('cant', !owned);
     }
   }
 

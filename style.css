@@ -463,3 +463,42 @@ body.touch #chat-log li { font-size: 12px; }
 body.touch #boss { top: calc(36px + var(--safe-t)); width: min(420px, 62vw); }
 body.touch #boss-name { font-size: 13px; }
 body.touch .boss-track { height: 11px; }
+
+/* ---- スキンの3Dプレビュー ---- */
+#skin-preview {
+  position: relative;
+  margin: 6px 0 10px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #2a3038, #171b21);
+  border: 1px solid rgba(255, 255, 255, .08);
+  overflow: hidden;
+}
+#skin-canvas {
+  display: block;
+  width: 100%;
+  height: 220px;
+  touch-action: none;
+  cursor: grab;
+}
+#skin-canvas:active { cursor: grabbing; }
+#skin-caption {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: #dfe6ee;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, .55));
+  pointer-events: none;
+}
+.skin-rarity {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #10141a;
+}
+@media (max-width: 560px) {
+  #skin-canvas { height: 160px; }
+}

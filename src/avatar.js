@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { canUseGltfAvatar, GltfAvatar } from './gltfavatar.js';
 import { createItemMesh } from './viewmodel.js';
 import { canvasTexture, paint } from './textures.js';
+import { SkinAvatar, skinReady } from './skinmodel.js';
+import { SKIN_BY_ID } from './data/skins.js';
 
 const smooth = (t) => t * t * (3 - 2 * t);
 const phase = (t, a, b) => THREE.MathUtils.clamp((t - a) / (b - a), 0, 1);
@@ -374,6 +376,14 @@ export class Avatar {
 // 人の見た目を1つ作る。持ってきたモデルが読めていればそちらを、
 // 読めていなければこれまでの手作りのほうを返す。
 // どちらも同じ使い方（setHat / setItem / setDowned / update）ができる
-export function makeAvatar(color = 0x5f7f9f, variant = 'human') {
+export function makeAvatar(color = 0x5f7f9f, variant = 'human', { skin = null } = {}) {
+  // スキンが選ばれていて、そのモデルが読めていれば、それを着る
+  if (skin && skinReady(skin)) {
+    try {
+      return new SkinAvatar(skin, { hat: SKIN_BY_ID[skin]?.hat ?? null });
+    } catch {
+      // 読めていなかったときは、下の見た目に落とす
+    }
+  }
   return canUseGltfAvatar() ? new GltfAvatar(color, variant) : new Avatar(color);
 }

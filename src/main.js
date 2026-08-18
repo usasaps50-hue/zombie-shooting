@@ -15,7 +15,7 @@ import {
 } from './data/upgrades.js';
 import { Waves } from './waves.js';
 import { WAVE, pickType, hpScale } from './data/waves.js';
-import { progress, levelOf, addCoins, classBonus, maxSlots, playerName } from './progress.js';
+import { progress, levelOf, addCoins, classBonus, maxSlots, playerName, currentSkin } from './progress.js';
 import { Teammate, Enemy } from './entities.js';
 import { Net, Ticker } from './net.js';
 import { RemotePlayer, packPlayer } from './remote.js';
@@ -38,6 +38,8 @@ import { sfx } from './audio.js';
 import { Minions, MINION, BOSS_MINION } from './minion.js';
 import { Shockwave, TITAN, MOTHER } from './boss.js';
 import { Chat, cleanText } from './chat.js';
+import { loadSkin, skinReady } from './skinmodel.js';
+import { SKIN_BY_ID } from './data/skins.js';
 
 const canvas = document.getElementById('game');
 
@@ -155,10 +157,26 @@ let usePressed = false;
 // 最初は斧だけ。ピストルもクラスも待機場のお店で買う
 let loadout = { passphrase: randomPass(), jobId: 'soldier', items: ['shovel'] };
 
+// いま着ているスキンを読み込んで、自分の見た目に反映する。
+// スキンは52体あるので、着ているぶんだけ、そのつど読む
+async function dressUp() {
+  const id = currentSkin();
+  if (!skinReady(id)) await loadSkin(id);
+  const def = SKIN_BY_ID[id];
+  if (def?.hat && !skinReady(def.hat)) await loadSkin(def.hat);
+  playerBody.setSkin(id);
+}
+
 const shop = new Shop(ITEM_ICONS, {
-  onChange: () => hud.setToast('そうびを変えた', 1.2),
+  onChange: () => {
+    hud.setToast('そうびを変えた', 1.2);
+    dressUp();
+  },
   onBattle: () => startGame(loadout),
 });
+// 起動したときに、前回着ていたスキンを着せる
+dressUp();
+
 const lobby = new Lobby(enterHub, () => {
   // ログアウト。オンラインの部屋からも出て、チャットも消す
   leaveRoom();

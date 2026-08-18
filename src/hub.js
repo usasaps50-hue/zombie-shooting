@@ -2,10 +2,23 @@ import * as THREE from 'three';
 import { QUALITY } from './device.js';
 import { makeAvatar } from './avatar.js';
 import { canvasTexture, paint } from './textures.js';
+import { hasScenery, makeScenery, scenerySize, ROAD_TILE } from './gltfmodel.js';
 
-// 待機場の広さ。真ん中の広場は何も置かず、建物は外周に並べる
+// 待機場。バトルに行く前にいる、安全なキャンプ。
+// 生き残りが、街の交差点をコンテナでふさいで住みついた場所、という作り。
+//
+// 見えているものは、外から持ってきた素材だけで組んである。
+// 手で作るのは「見えない当たり判定」「地面」「日本語の看板」だけ。
+// 素材が読めなかったときも、看板と話しかける場所は残るので遊べなくならない。
+
+// 真ん中の広場の広さ。ここには何も置かない
 const PLAZA_RADIUS = 11;
-const YARD = 30;
+// キャンプの広さ。この外には出られない
+const YARD = 27.5;
+// お店の家の正面が来る場所（真ん中からの距離）
+const SHOP_FRONT = 15.4;
+// バリケード（コンテナや車の壁）を並べる輪の大きさ
+const BARRICADE = 25.2;
 
 // 話しかけられる距離
 export const TALK_RANGE = 3.2;
@@ -36,153 +49,194 @@ function sign(text, sub, color = '#2f3a4a') {
   return canvasTexture(canvas);
 }
 
+// 文字を出す板。素材には日本語が入っていないので、ここだけ手で作る。
+// +Z の面に文字が出るので、置くときは見せたいほうへ +Z を向ける
+function signBoard(text, sub, color, width = 3.4) {
+  const frame = new THREE.MeshStandardMaterial({ color: 0x2b323b, roughness: 0.9 });
+  const board = new THREE.Mesh(
+    new THREE.BoxGeometry(width, width * 0.36, 0.14),
+    [frame, frame, frame, frame,
+      new THREE.MeshStandardMaterial({ map: sign(text, sub, color), roughness: 0.9 }), frame]
+  );
+  board.castShadow = true;
+  board.receiveShadow = true;
+  return board;
+}
+
 export function createHub() {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xa8c6e0);
-  scene.fog = new THREE.Fog(0xa8c6e0, 40, 120);
+  scene.fog = new THREE.Fog(0xa8c6e0, 42, 130);
 
   scene.add(new THREE.HemisphereLight(0xdcecff, 0x6a6f66, 2.2));
   const sun = new THREE.DirectionalLight(0xfff4e0, 2.6);
   sun.position.set(18, 30, 14);
   sun.castShadow = true;
   sun.shadow.mapSize.set(QUALITY.shadowMap, QUALITY.shadowMap);
-  sun.shadow.camera.left = -YARD;
-  sun.shadow.camera.right = YARD;
-  sun.shadow.camera.top = YARD;
-  sun.shadow.camera.bottom = -YARD;
+  sun.shadow.camera.left = -YARD - 6;
+  sun.shadow.camera.right = YARD + 6;
+  sun.shadow.camera.top = YARD + 6;
+  sun.shadow.camera.bottom = -YARD - 6;
   sun.shadow.camera.far = 90;
+  // 丸みのあるモデルに、自分の影が斑点のように落ちるのを防ぐ
+  sun.shadow.normalBias = 0.06;
+  sun.shadow.bias = -0.0006;
   scene.add(sun);
 
   const colliders = [];
   const npcs = [];
   const zones = [];
+  // すでに何か置いた場所。ここに重ねて置かない
+  const taken = [];
 
-  const mat = (color, rough = 0.85) => new THREE.MeshStandardMaterial({ color, roughness: rough });
+  // 毎回おなじキャンプになるよう、決まった順番の乱数を使う
+  const rand = (() => {
+    let seed = 76310924;
+    return () => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+  })();
 
-  const solid = (mesh, blocking = true) => {
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    if (blocking) {
-      mesh.updateMatrixWorld(true);
-      colliders.push(new THREE.Box3().setFromObject(mesh));
-    }
-    return mesh;
+  const box3 = new THREE.Box3();
+
+  const claim = (minX, maxX, minZ, maxZ) => taken.push({ minX, maxX, minZ, maxZ });
+
+  // その四角が、すでに置いたものと重なっていないか
+  const isFree = (minX, maxX, minZ, maxZ, margin) => !taken.some((t) =>
+    minX - margin < t.maxX && maxX + margin > t.minX
+    && minZ - margin < t.maxZ && maxZ + margin > t.minZ);
+
+  // 素材を1つ置く。重なる場所なら置かずに false を返す
+  const place = (object, x, z, yaw, {
+    solid = false, margin = 0.5, reserve = true, limit = YARD,
+  } = {}) => {
+    if (!object) return false;
+    object.position.set(x, 0, z);
+    object.rotation.y = yaw;
+    object.updateMatrixWorld(true);
+    box3.setFromObject(object);
+    const { min, max } = box3;
+    if (min.x < -limit || max.x > limit || min.z < -limit || max.z > limit) return false;
+    if (reserve && !isFree(min.x, max.x, min.z, max.z, margin)) return false;
+    object.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.receiveShadow = true;
+    });
+    scene.add(object);
+    if (reserve) claim(min.x, max.x, min.z, max.z);
+    if (solid) colliders.push(box3.clone());
+    return true;
   };
 
-  // 芝生と、真ん中の石畳の広場
-  const grass = new THREE.Mesh(new THREE.PlaneGeometry(YARD * 2, YARD * 2), mat(0x6f8f55, 1));
-  grass.rotation.x = -Math.PI / 2;
-  grass.receiveShadow = true;
-  scene.add(grass);
+  // 見えない当たり判定だけを置く（キャンプの外へ出られないようにする壁）
+  const addHiddenBox = (x, y, z, w, h, d) => {
+    colliders.push(new THREE.Box3(
+      new THREE.Vector3(x - w / 2, y, z - d / 2),
+      new THREE.Vector3(x + w / 2, y + h, z + d / 2)
+    ));
+  };
 
-  const plaza = new THREE.Mesh(new THREE.CircleGeometry(PLAZA_RADIUS, 48), mat(0x9aa2ab, 0.95));
-  plaza.rotation.x = -Math.PI / 2;
-  plaza.position.y = 0.02;
-  plaza.receiveShadow = true;
-  scene.add(plaza);
+  // 角度と「真ん中からの距離」で場所を出す。
+  // side は、その方向を向いたときの横ずれ（右が＋）
+  const spot = (angle, r, side = 0) => new THREE.Vector3(
+    Math.sin(angle) * r + Math.cos(angle) * side, 0,
+    Math.cos(angle) * r - Math.sin(angle) * side
+  );
 
-  const rim = new THREE.Mesh(new THREE.RingGeometry(PLAZA_RADIUS, PLAZA_RADIUS + 0.6, 48), mat(0x7c848d, 0.95));
-  rim.rotation.x = -Math.PI / 2;
-  rim.position.y = 0.03;
-  rim.receiveShadow = true;
-  scene.add(rim);
+  // ---- 地面 ----
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(YARD * 4, YARD * 4),
+    new THREE.MeshStandardMaterial({ color: 0x6d7551, roughness: 1 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  // 道路タイルと同じ高さだと、ちらついてまだらに見える。少しだけ下げる
+  ground.position.y = -0.04;
+  ground.receiveShadow = true;
+  scene.add(ground);
 
-  // 広場から各建物へ伸びる石畳の道
-  for (const angle of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
-    const path = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 12), mat(0x8d959e, 0.95));
-    path.rotation.set(-Math.PI / 2, 0, -angle);
-    path.position.set(Math.sin(angle) * (PLAZA_RADIUS + 5), 0.015, Math.cos(angle) * (PLAZA_RADIUS + 5));
-    path.receiveShadow = true;
-    scene.add(path);
+  // ---- 道。十字の交差点をタイルで敷いて、そのまわりに住んでいる形にする ----
+  if (hasScenery('road4Way') && hasScenery('roadStraight')) {
+    const cross = makeScenery('road4Way');
+    cross.receiveShadow = true;
+    cross.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
+    scene.add(cross);
+    claim(-ROAD_TILE / 2, ROAD_TILE / 2, -ROAD_TILE / 2, ROAD_TILE / 2);
+
+    for (const [dx, dz] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+      const tile = makeScenery('roadStraight');
+      tile.position.set(dx * ROAD_TILE, 0, dz * ROAD_TILE);
+      tile.rotation.y = dx ? Math.PI / 2 : 0;
+      tile.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
+      scene.add(tile);
+      claim(dx * ROAD_TILE - ROAD_TILE / 2, dx * ROAD_TILE + ROAD_TILE / 2,
+        dz * ROAD_TILE - ROAD_TILE / 2, dz * ROAD_TILE + ROAD_TILE / 2);
+    }
+  } else {
+    // 道路タイルが読めなかったとき用の、ただの広場
+    const plaza = new THREE.Mesh(
+      new THREE.CircleGeometry(PLAZA_RADIUS, 40),
+      new THREE.MeshStandardMaterial({ color: 0x9aa2ab, roughness: 0.95 })
+    );
+    plaza.rotation.x = -Math.PI / 2;
+    plaza.position.y = 0.02;
+    plaza.receiveShadow = true;
+    scene.add(plaza);
+    claim(-PLAZA_RADIUS, PLAZA_RADIUS, -PLAZA_RADIUS, PLAZA_RADIUS);
   }
 
-  // 店。カウンター越しに店員と話す形にする
-  function shop(id, title, subtitle, color, accent, angle, keeper) {
-    const dist = PLAZA_RADIUS + 6.5;
-    const x = Math.sin(angle) * dist;
-    const z = Math.cos(angle) * dist;
-    // 建物は広場の中心を向く
+  // ---- お店 ----
+  // 家は素材そのまま。前にバリケードを並べてカウンターにして、
+  // その内側に店員が立つ。看板だけは日本語なので手作り
+  function shop(id, title, subtitle, angle, houseId, keeper) {
+    // 建物と店員は、広場のほう（角度＋半回転）を向く
     const facing = angle + Math.PI;
+    const size = hasScenery(houseId) ? scenerySize(houseId) : null;
 
-    const group = new THREE.Group();
-    group.position.set(x, 0, z);
-    group.rotation.y = facing;
+    if (size) {
+      const house = makeScenery(houseId);
+      const at = spot(angle, SHOP_FRONT + size.z / 2);
+      place(house, at.x, at.z, facing, { solid: true, margin: 0 });
 
-    const w = 7.4, h = 3.8, d = 5;
-    // 店員が立つ隙間をあけたいので、建物の前面はカウンターより 1.2m 奥にする
-    const back = -d / 2 - 1.2;
-    const walls = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
-    walls.position.set(0, h / 2, back);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.9, 0.4, d + 1.4), mat(accent, 0.7));
-    roof.position.set(0, h + 0.2, back);
-    // 屋根の上の三角。ただの箱に見えないように
-    const gable = new THREE.Mesh(new THREE.ConeGeometry(w * 0.62, 1.5, 4), mat(accent, 0.7));
-    gable.rotation.y = Math.PI / 4;
-    gable.position.set(0, h + 1.15, back);
-
-    const counter = new THREE.Mesh(new THREE.BoxGeometry(w * 0.8, 1.1, 0.7), mat(0x8a6a45, 0.9));
-    counter.position.set(0, 0.55, 0.5);
-    const top = new THREE.Mesh(new THREE.BoxGeometry(w * 0.86, 0.12, 1.1), mat(0xb08a5c, 0.8));
-    top.position.set(0, 1.16, 0.45);
-
-    // ひさし。柱2本で支える。低いと店員の帽子が隠れるので高めに張る
-    const awning = new THREE.Mesh(new THREE.BoxGeometry(w * 0.95, 0.16, 2.6), mat(accent, 0.7));
-    awning.position.set(0, 3.4, 0.7);
-    for (const side of [-1, 1]) {
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 3.4, 8), mat(0x6d5540, 0.9));
-      post.position.set(side * w * 0.44, 1.7, 1.85);
-      group.add(post);
+      // 店の看板。家の正面の、扉より上に貼る。
+      // はみ出さないよう、家の横幅より少しせまくする
+      const board = signBoard(title, subtitle, '#2f3a4a', Math.min(3.4, size.x - 0.6));
+      const front = spot(angle, SHOP_FRONT - 0.12);
+      board.position.set(front.x, 2.5, front.z);
+      board.rotation.y = facing;
+      scene.add(board);
     }
 
-    const board = new THREE.Mesh(
-      new THREE.BoxGeometry(4.4, 1.6, 0.16),
-      [mat(0x2f3a4a), mat(0x2f3a4a), mat(0x2f3a4a), mat(0x2f3a4a),
-        new THREE.MeshStandardMaterial({ map: sign(title, subtitle), roughness: 0.9 }), mat(0x2f3a4a)]
-    );
-    board.position.set(0, 4.3, 0.85);
-
-    group.add(walls, roof, gable, counter, top, awning, board);
-    group.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    scene.add(group);
-
-    group.updateMatrixWorld(true);
-    // 当たり判定は建物とカウンターだけ。ひさしの下は通れる
-    for (const part of [walls, counter]) {
-      colliders.push(new THREE.Box3().setFromObject(part));
+    // カウンター。道路用のバリケードを3つ並べる
+    for (const side of [-1.65, 0, 1.65]) {
+      const at = spot(angle, SHOP_FRONT - 2.0, side);
+      const bar = makeScenery('barrier') ?? makeScenery('plasticBarrier');
+      if (!bar) break;
+      place(bar, at.x, at.z, facing, { solid: true, margin: 0, reserve: false });
     }
 
-    // 店員はカウンターの内側の一段高いところに立つ。
-    // 床と同じ高さだと、カウンターに隠れて頭しか見えない
-    const step = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, 1.05, 1.0), mat(0x9a7550, 0.9));
-    step.position.set(0, 0.525, -0.55);
-    group.add(step);
-    step.castShadow = true;
-    step.receiveShadow = true;
-
+    // 店員。カウンターの内側に立って、広場のほうを向く
     const avatar = makeAvatar(keeper.color, keeper.variant);
     avatar.setHat(keeper.hat);
     avatar.setItem(keeper.item ?? null);
-    const inside = new THREE.Vector3(0, 0, -0.55).applyAxisAngle(new THREE.Vector3(0, 1, 0), facing);
-    avatar.root.position.set(x + inside.x, 1.05, z + inside.z);
+    const stand = spot(angle, SHOP_FRONT - 0.9);
+    avatar.root.position.set(stand.x, 0, stand.z);
     // アバターは +Z が正面。facing のぶんだけ回すと広場のほうを向く
     avatar.root.rotation.y = facing;
     scene.add(avatar.root);
     npcs.push({ avatar, name: keeper.name });
 
-    // 話しかける位置はカウンターの手前
-    const front = new THREE.Vector3(0, 0, 2.2).applyAxisAngle(new THREE.Vector3(0, 1, 0), facing);
-    zones.push({
-      id,
-      title,
-      label: keeper.prompt,
-      position: new THREE.Vector3(x + front.x, 0, z + front.z),
-    });
+    // 店のまわりは、あとから小物を置かないように場所を取っておく
+    const center = spot(angle, SHOP_FRONT + 1);
+    claim(center.x - 5, center.x + 5, center.z - 5, center.z + 5);
 
-    return group;
+    // 話しかける位置はカウンターの手前
+    const front = spot(angle, SHOP_FRONT - 3.6);
+    zones.push({ id, title, label: keeper.prompt, position: front });
   }
 
-  shop('shopItem', 'アイテムショップ', 'そうび を えらぶ', 0xd8cdb8, 0xb2543f, -Math.PI / 2, {
+  shop('shopItem', 'アイテムショップ', 'そうび を えらぶ', -Math.PI / 2, 'block1S', {
     name: 'ハルさん',
     color: 0x4f7d68,
     hat: 'soldier',
@@ -190,7 +244,7 @@ export function createHub() {
     prompt: 'アイテムを見せてもらう',
   });
 
-  shop('shopJob', 'クラスショップ', 'しょくぎょう を えらぶ', 0xc8d2dd, 0x3f6ab2, Math.PI / 2, {
+  shop('shopJob', 'クラスショップ', 'しょくぎょう を えらぶ', Math.PI / 2, 'block2S', {
     name: 'ミナさん',
     color: 0x8a5f9f,
     hat: 'medic',
@@ -199,7 +253,7 @@ export function createHub() {
   });
 
   // バトルゲートが北（-Z）なので、レベルアップ所は南（+Z）に置いて重ならないようにする
-  shop('levelUp', 'レベルアップ所', 'ただいま せいさくちゅう', 0xc9c2a8, 0x8a7a3f, 0, {
+  shop('levelUp', 'レベルアップ所', 'ただいま せいさくちゅう', 0, 'block3S', {
     name: 'ゲンさん',
     color: 0x9f7f4f,
     hat: 'architect',
@@ -207,35 +261,59 @@ export function createHub() {
     prompt: 'レベルアップの話を聞く',
   });
 
-  // バトルゲート。くぐるのではなく、前に立って決定する
-  const gate = new THREE.Group();
-  gate.position.set(0, 0, -(PLAZA_RADIUS + 6.5));
-  const gateMat = mat(0x4a5260, 0.7);
+  // スキンショップ。アイテムショップの反対どなりに置く
+  shop('shopSkin', 'スキンショップ', 'みため を かえる', Math.PI * 0.25, 'block4', {
+    name: 'ノアさん',
+    color: 0xc86f9f,
+    hat: 'criminal',
+    item: null,
+    prompt: 'スキンを見せてもらう',
+  });
+
+  // ---- バトルゲート（北）----
+  // コンテナで通りをふさぎ、あいだの赤い光をくぐるとバトルへ行く。
+  // くぐるのではなく、前に立って決定する
+  const GATE_Z = -17.5;
   for (const side of [-1, 1]) {
-    const pillar = new THREE.Mesh(new THREE.BoxGeometry(1.1, 5.2, 1.1), gateMat);
-    pillar.position.set(side * 2.8, 2.6, 0);
-    gate.add(pillar);
+    const wall = makeScenery('container') ?? makeScenery('containerGreen');
+    if (wall) place(wall, side * 5.9, GATE_Z, 0, { solid: true, margin: 0, reserve: false });
+    // コンテナの上にもう1段。壁らしく高くする
+    const stack = makeScenery(side < 0 ? 'containerGreen' : 'container');
+    if (stack) {
+      stack.position.set(side * 5.9, 2.62, GATE_Z);
+      stack.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      scene.add(stack);
+    }
   }
-  const lintel = new THREE.Mesh(new THREE.BoxGeometry(7.2, 1.0, 1.3), gateMat);
-  lintel.position.y = 5.4;
+  claim(-11, 11, GATE_Z - 3, GATE_Z + 3);
+
+  // 通り道の赤い光
   const portal = new THREE.Mesh(
-    new THREE.PlaneGeometry(4.5, 4.6),
+    new THREE.PlaneGeometry(5.6, 3.4),
     new THREE.MeshBasicMaterial({ color: 0xd05656, transparent: true, opacity: 0.42, side: THREE.DoubleSide })
   );
-  portal.position.y = 2.6;
-  const gateBoard = new THREE.Mesh(
-    new THREE.BoxGeometry(4.6, 1.5, 0.16),
-    [gateMat, gateMat, gateMat, gateMat,
-      new THREE.MeshStandardMaterial({ map: sign('バトルへ', 'ゾンビ の まちへ', '#5a2a2a'), roughness: 0.9 }), gateMat]
-  );
-  gateBoard.position.set(0, 6.6, 0.2);
-  gate.add(lintel, portal, gateBoard);
-  gate.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-  scene.add(gate);
-  gate.updateMatrixWorld(true);
-  for (const pillar of gate.children.filter((c) => c.geometry?.type === 'BoxGeometry' && c.position.y < 4)) {
-    colliders.push(new THREE.Box3().setFromObject(pillar));
+  portal.position.set(0, 1.7, GATE_Z);
+  scene.add(portal);
+
+  // 道にせり出す標識。ゲートの手前にまたがせて、遠くからでも分かるようにする。
+  // 素材は「柱が右はし、板が左へ伸びる」形なので、柱を道の右わきに置く
+  const gantry = makeScenery('townSign');
+  if (gantry) {
+    gantry.position.set(4.6, 0, GATE_Z + 3.7);
+    gantry.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    scene.add(gantry);
   }
+  // 標識の板に、日本語の看板をぶら下げる
+  const gateBoard = signBoard('バトルへ', 'ゾンビ の まちへ', '#5a2a2a', 4.2);
+  gateBoard.position.set(1.1, 4.3, GATE_Z + 4.6);
+  scene.add(gateBoard);
+
+  // ゲートの前の道しるべ。コーンとバリケードを少し散らす
+  for (const [x, z] of [[-3.4, GATE_Z + 3.6], [3.4, GATE_Z + 3.6], [-2.2, GATE_Z + 5.4], [2.2, GATE_Z + 5.4]]) {
+    const cone = makeScenery('cone');
+    if (cone) place(cone, x, z, rand() * Math.PI, { solid: false, margin: 0, reserve: false });
+  }
+
   zones.push({
     id: 'battle',
     title: 'バトルゲート',
@@ -243,66 +321,60 @@ export function createHub() {
     position: new THREE.Vector3(0, 0, -(PLAZA_RADIUS + 4.0)),
   });
 
-  // あやしい端末。広場のすぐ横（北西のななめ）に置いて、
-  // スポーン地点から振り向いただけで見えるようにする
+  // ---- あやしい端末（北西）----
+  // 広場から振り向いただけで見えるように、光る柱を立てておく
   const secretAngle = -Math.PI * 0.75;
-  const secretDist = PLAZA_RADIUS + 4.5;
-  const secret = new THREE.Group();
-  secret.position.set(Math.sin(secretAngle) * secretDist, 0, Math.cos(secretAngle) * secretDist);
-  // 広場のほうを向ける。お店と同じで、角度に半回転足すと中心を向く
-  secret.rotation.y = secretAngle + Math.PI;
+  const secretPos = spot(secretAngle, PLAZA_RADIUS + 4.5);
+  const secretFacing = secretAngle + Math.PI;
 
-  const pad = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.6, 0.22, 20), mat(0x3f4650, 0.9));
-  pad.position.y = 0.11;
-  const pillar = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 0.9), mat(0x2b323b, 0.6));
-  pillar.position.set(0, 0.97, 0);
-  const deck = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.5, 1.2), mat(0x353d47, 0.6));
-  deck.position.set(0, 1.75, 0.18);
-  deck.rotation.x = -0.35;
-  const screen = new THREE.Mesh(
-    new THREE.BoxGeometry(1.35, 1.0, 0.12),
-    [mat(0x2b323b), mat(0x2b323b), mat(0x2b323b), mat(0x2b323b),
-      new THREE.MeshStandardMaterial({ map: sign('？？？', 'あいことば', '#101c14'), roughness: 0.6 }), mat(0x2b323b)]
-  );
-  screen.position.set(0, 2.5, 0.28);
-  screen.rotation.x = -0.22;
-  // 動いている印の緑のランプ
-  const lamp = new THREE.Mesh(
-    new THREE.SphereGeometry(0.11, 10, 8),
-    new THREE.MeshBasicMaterial({ color: 0x6bff9a })
-  );
-  lamp.position.set(0.62, 3.05, 0.24);
-  // キーの並び
-  for (let i = 0; i < 9; i++) {
-    const key = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.06, 0.2), mat(0x9aa6b3, 0.6));
-    key.position.set(-0.4 + (i % 3) * 0.4, 1.96 + Math.floor(i / 3) * 0.06, 0.42 - Math.floor(i / 3) * 0.3);
-    key.rotation.x = -0.35;
-    secret.add(key);
+  // うしろの壁がわりのコンテナ。端末が空き地に浮かないように、背にする
+  const shed = makeScenery('containerGreen');
+  if (shed) {
+    const back = spot(secretAngle, PLAZA_RADIUS + 8.6);
+    place(shed, back.x, back.z, secretFacing, { solid: true, margin: 0, reserve: false });
   }
-  // 遠くからでも見つかるように、高い柱と光る看板を立てる。
-  // これがないと、広場からは端末が小さすぎて気づけない
-  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 7.5, 8), mat(0x3a424c, 0.6));
-  mast.position.set(-1.9, 3.75, 0);
+  // 台になるパレットと木箱、その上のラジオ。これが「端末」
+  const pallet = makeScenery('pallet');
+  if (pallet) place(pallet, secretPos.x, secretPos.z, secretFacing, { solid: false, margin: 0, reserve: false });
+  const crateId = ['chestSpecial', 'chest'].find(hasScenery);
+  let crateTop = scenerySize('pallet')?.y ?? 0;
+  if (crateId) {
+    const crate = makeScenery(crateId);
+    crate.position.set(secretPos.x, crateTop, secretPos.z);
+    crate.rotation.y = secretFacing;
+    crate.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    scene.add(crate);
+    crateTop += scenerySize(crateId).y;
+  }
+  const radio = makeScenery('radio');
+  if (radio) {
+    radio.position.set(secretPos.x, crateTop, secretPos.z);
+    radio.rotation.y = secretFacing;
+    radio.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    scene.add(radio);
+  }
+
+  // 遠くからでも見つかるように、光る柱と看板を立てる。
+  // 光るものは素材にないので、ここだけ手で作る
+  const beaconPos = spot(secretAngle, PLAZA_RADIUS + 4.5, -2.8);
+  const mast = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.16, 0.22, 7.5, 8),
+    new THREE.MeshStandardMaterial({ color: 0x3a424c, roughness: 0.6 })
+  );
+  mast.position.set(beaconPos.x, 3.75, beaconPos.z);
+  mast.castShadow = true;
   const beaconGlow = new THREE.Mesh(
     new THREE.CylinderGeometry(0.5, 0.5, 6.4, 10, 1, true),
     new THREE.MeshBasicMaterial({
       color: 0x6bff9a, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide,
     })
   );
-  beaconGlow.position.set(-1.9, 4.2, 0);
+  beaconGlow.position.set(beaconPos.x, 4.2, beaconPos.z);
   const beacon = new THREE.Mesh(
     new THREE.SphereGeometry(0.42, 12, 10),
     new THREE.MeshBasicMaterial({ color: 0x6bff9a })
   );
-  beacon.position.set(-1.9, 7.7, 0);
-  // 広場を向く大きな看板
-  const bigBoard = new THREE.Mesh(
-    new THREE.BoxGeometry(3.6, 1.5, 0.18),
-    [mat(0x1d2a20), mat(0x1d2a20), mat(0x1d2a20), mat(0x1d2a20),
-      new THREE.MeshStandardMaterial({ map: sign('？？？', 'あやしい たんまつ', '#16301f'), roughness: 0.7 }), mat(0x1d2a20)]
-  );
-  bigBoard.position.set(0, 5.4, 0.2);
-  // 足元の光る円。近づく目印になる
+  beacon.position.set(beaconPos.x, 7.7, beaconPos.z);
   const ringLight = new THREE.Mesh(
     new THREE.RingGeometry(2.5, 2.9, 28),
     new THREE.MeshBasicMaterial({
@@ -310,73 +382,124 @@ export function createHub() {
     })
   );
   ringLight.rotation.x = -Math.PI / 2;
-  ringLight.position.y = 0.24;
-
-  secret.add(pad, pillar, deck, screen, lamp, mast, bigBoard);
-  secret.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-  // 光るものは影を落とさない。落とすと発光して見えなくなる
-  secret.add(beacon, beaconGlow, ringLight);
-  scene.add(secret);
-  secret.updateMatrixWorld(true);
-  colliders.push(new THREE.Box3().setFromObject(pillar));
-
-  // 広場から端末まで、石畳の細い道を引く
-  const trail = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 9), mat(0x8d959e, 0.95));
-  trail.rotation.set(-Math.PI / 2, 0, -secretAngle);
-  trail.position.set(secret.position.x * 0.72, 0.014, secret.position.z * 0.72);
-  trail.receiveShadow = true;
-  scene.add(trail);
+  ringLight.position.set(secretPos.x, 0.06, secretPos.z);
+  const secretBoard = signBoard('？？？', 'あやしい たんまつ', '#16301f', 3.2);
+  secretBoard.position.set(beaconPos.x, 5.4, beaconPos.z);
+  secretBoard.rotation.y = secretFacing;
+  scene.add(mast, beaconGlow, beacon, ringLight, secretBoard);
+  claim(secretPos.x - 5, secretPos.x + 5, secretPos.z - 5, secretPos.z + 5);
 
   // 話しかける位置は、端末の広場側の手前
-  const secretFront = new THREE.Vector3(0, 0, 2.4)
-    .applyAxisAngle(new THREE.Vector3(0, 1, 0), secretAngle + Math.PI);
   zones.push({
     id: 'secret',
     title: 'あやしい端末',
     label: 'あやしい端末をしらべる',
-    position: secret.position.clone().add(secretFront),
+    position: spot(secretAngle, PLAZA_RADIUS + 2.1),
   });
 
-  // 外の飾り。木と街灯を、道と広場を避けて並べる
-  const treeMat = mat(0x4d7a3a, 1);
-  const trunkMat = mat(0x6b4a2f, 1);
-  for (let i = 0; i < 26; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 20 + Math.random() * 12;
-    const x = Math.sin(angle) * dist;
-    const z = Math.cos(angle) * dist;
-    // 道の延長線上と、端末のまわりは空けておく
-    if (Math.abs(x) < 4 || Math.abs(z) < 4) continue;
-    if (Math.hypot(x - secret.position.x, z - secret.position.z) < 7) continue;
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 1.8, 7), trunkMat);
-    trunk.position.set(x, 0.9, z);
-    const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5 + Math.random() * 0.6, 0), treeMat);
-    leaves.position.set(x, 2.7, z);
-    solid(trunk);
-    leaves.castShadow = true;
-    scene.add(leaves);
+  // ---- テント。生き残りが寝泊まりしている場所 ----
+  // たき火より先に置く。あとから置くと、たき火の場所とぶつかって消えてしまう
+  for (const [angle, r, side] of [
+    [Math.PI * 0.75, 20, 6], [Math.PI * 0.75, 20, -6],
+    [Math.PI * 0.25, 18, 0], [-Math.PI * 0.25, 17, 5],
+  ]) {
+    const at = spot(angle, r, side);
+    const tent = makeScenery('tent');
+    if (!tent) break;
+    if (!place(tent, at.x, at.z, angle + Math.PI, { solid: true, margin: 0.8 })) continue;
+    // テントのわきの荷物
+    for (const id of ['backpack', 'gasCan', 'firstAid', 'waterBottle']) {
+      const prop = makeScenery(id);
+      if (prop) {
+        place(prop, at.x + (rand() - 0.5) * 5, at.z + (rand() - 0.5) * 5, rand() * Math.PI * 2,
+          { solid: false, margin: 0.4 });
+      }
+    }
   }
 
-  // -3π/4 の方角にはあやしい端末を置いたので、街灯は立てない
-  for (const angle of [Math.PI / 4, Math.PI * 0.75, -Math.PI / 4]) {
-    const x = Math.sin(angle) * (PLAZA_RADIUS + 2.2);
-    const z = Math.cos(angle) * (PLAZA_RADIUS + 2.2);
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 3.6, 8), mat(0x3f4650, 0.6));
-    pole.position.set(x, 1.8, z);
-    solid(pole);
-    const lamp = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 0), new THREE.MeshBasicMaterial({ color: 0xffe9b0 }));
-    lamp.position.set(x, 3.75, z);
-    scene.add(lamp);
+  // ---- たき火。北東の広場ぎわ。みんなが集まる場所 ----
+  const camp = spot(Math.PI * 0.75, PLAZA_RADIUS + 3.2);
+  const fire = makeScenery('bonfire');
+  if (fire) place(fire, camp.x, camp.z, 0, { solid: false, margin: 0, reserve: false });
+  // たき火のあかり
+  const fireLight = new THREE.PointLight(0xffa24a, 14, 12, 2);
+  fireLight.position.set(camp.x, 1.1, camp.z);
+  scene.add(fireLight);
+  // まわりに丸太のいす
+  for (let i = 0; i < 4; i++) {
+    const a = Math.PI * 0.75 + i * (Math.PI / 2) + 0.4;
+    const log = makeScenery('woodLog');
+    if (log) {
+      place(log, camp.x + Math.sin(a) * 2.4, camp.z + Math.cos(a) * 2.4, a,
+        { solid: false, margin: 0, reserve: false });
+    }
+  }
+  const pot = makeScenery('pot');
+  if (pot) place(pot, camp.x + 1.5, camp.z - 1.2, 0.6, { solid: false, margin: 0, reserve: false });
+  const propane = makeScenery('propaneTank');
+  if (propane) place(propane, camp.x - 1.9, camp.z - 1.6, 0.4, { solid: false, margin: 0, reserve: false });
+  claim(camp.x - 3.2, camp.x + 3.2, camp.z - 3.2, camp.z + 3.2);
+
+  // 給水塔。キャンプの目印になる
+  if (hasScenery('waterTower')) {
+    const at = spot(-Math.PI * 0.25, 20);
+    place(makeScenery('waterTower'), at.x, at.z, 0.4, { solid: true, margin: 0.6 });
   }
 
-  // 外周の柵。落ちていかないように囲う
+  // ---- 街灯。広場のまわりに立てる ----
+  for (const angle of [Math.PI * 0.25, Math.PI * 0.75, -Math.PI * 0.25, -Math.PI * 0.75]) {
+    const at = spot(angle, PLAZA_RADIUS - 1.5);
+    const lamp = makeScenery('kitLamp') ?? makeScenery('streetlight');
+    // 端末の柱と近すぎるところは、街灯を立てない
+    if (lamp && Math.hypot(at.x - beaconPos.x, at.z - beaconPos.z) > 6) {
+      place(lamp, at.x, at.z, angle, { solid: false, margin: 0.4, reserve: false });
+    }
+  }
+
+  // ---- バリケード。キャンプをぐるりと囲む壁 ----
+  // コンテナ・乗り捨てられた車・柵を、輪になるように並べる
+  const wallIds = ['container', 'containerGreen', 'carTruck', 'carPickupArmored', 'carSports', 'barrier']
+    .filter(hasScenery);
+  if (wallIds.length) {
+    for (let i = 0; i < 30; i++) {
+      const angle = (i / 30) * Math.PI * 2 + 0.15;
+      const at = spot(angle, BARRICADE - rand() * 1.2);
+      const id = wallIds[i % wallIds.length];
+      // 出入り口のぶん、北の通りだけは空けておく
+      if (Math.abs(at.x) < 5 && at.z < 0) continue;
+      place(makeScenery(id), at.x, at.z, angle + Math.PI / 2 + (rand() - 0.5) * 0.2,
+        { solid: true, margin: 0.4, limit: YARD + 2 });
+    }
+  }
+
+  // ---- 外の街。バリケードの向こうに家を並べて、街の中にいるように見せる ----
+  const outerIds = ['block1L', 'block2L', 'block3B', 'block4', 'block1S', 'block2S', 'block3S', 'house1', 'house2']
+    .filter(hasScenery);
+  if (outerIds.length) {
+    for (let i = 0; i < 44; i++) {
+      const angle = (i / 44) * Math.PI * 2;
+      const id = outerIds[Math.floor(rand() * outerIds.length)];
+      const size = scenerySize(id);
+      const at = spot(angle, YARD + 4.5 + size.z / 2 + rand() * 2);
+      place(makeScenery(id), at.x, at.z, angle + Math.PI, { solid: false, margin: 0.6, limit: YARD + 22 });
+    }
+  }
+
+  // ---- 散らばった小物。当たり判定はつけない ----
+  const debrisIds = ['trashcan', 'barrel', 'propaneTank', 'chest', 'pallet', 'tyres', 'cinder', 'cone', 'pipes', 'trash', 'waterBottle', 'torchFire']
+    .filter(hasScenery);
+  if (debrisIds.length) {
+    for (let i = 0; i < 70; i++) {
+      const a = rand() * Math.PI * 2;
+      const d = PLAZA_RADIUS - 3 + rand() * (BARRICADE - PLAZA_RADIUS);
+      place(makeScenery(debrisIds[Math.floor(rand() * debrisIds.length)]),
+        Math.sin(a) * d, Math.cos(a) * d, rand() * Math.PI * 2, { solid: false, margin: 0.6 });
+    }
+  }
+
+  // ---- 外周。見えない壁で、キャンプの外へ出られないようにする ----
   for (const [dx, dz] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
-    const fence = new THREE.Mesh(
-      new THREE.BoxGeometry(dx ? 0.6 : YARD * 2, 2.2, dz ? 0.6 : YARD * 2),
-      mat(0x5d6b52, 0.95)
-    );
-    fence.position.set(dx * YARD, 1.1, dz * YARD);
-    solid(fence);
+    addHiddenBox(dx * YARD, 0, dz * YARD, dx ? 1.2 : YARD * 2 + 2, 8, dz ? 1.2 : YARD * 2 + 2);
   }
 
   return { scene, colliders, npcs, zones, spawn: HUB_SPAWN.clone() };

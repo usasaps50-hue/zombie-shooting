@@ -3,6 +3,7 @@ import { JOBS } from './data/jobs.js';
 import {
   CLASS_LEVEL_COST, CLASS_MAX_LEVEL, classEffects, JOB_PRICE, ITEM_PRICE,
 } from './data/classes.js';
+import { DEFAULT_SKIN, SKIN_BY_ID, GACHA_COST, rollSkin } from './data/skins.js';
 
 // アカウントごとに `zombie-shooting-progress:<アカウントid>` へ保存する。
 // アカウントを入れる前からあった保存データは、一番はじめのアカウントが引き継ぐ
@@ -20,6 +21,9 @@ const empty = () => ({
   classLevels: Object.fromEntries(Object.keys(JOBS).map((id) => [id, 1])),
   ownedItems: freeIds(ITEM_PRICE),
   ownedJobs: freeIds(JOB_PRICE),
+  // 見た目（スキン）。持っているものと、いま着ているもの
+  ownedSkins: [DEFAULT_SKIN],
+  skin: DEFAULT_SKIN,
 });
 
 function readSave(key) {
@@ -41,6 +45,10 @@ function normalize(saved) {
     classLevels: { ...base.classLevels, ...saved.classLevels },
     ownedItems: [...new Set([...base.ownedItems, ...(saved.ownedItems ?? [])])],
     ownedJobs: [...new Set([...base.ownedJobs, ...(saved.ownedJobs ?? [])])],
+    // 知らない名前のスキンは捨てる（あとで一覧から消したときのため）
+    ownedSkins: [...new Set([...base.ownedSkins, ...(saved.ownedSkins ?? [])])]
+      .filter((id) => SKIN_BY_ID[id]),
+    skin: SKIN_BY_ID[saved.skin] ? saved.skin : DEFAULT_SKIN,
   };
 }
 
@@ -221,4 +229,38 @@ export function buyJob(id) {
   progress.ownedJobs.push(id);
   save();
   return true;
+}
+
+// ---- 見た目（スキン）----
+
+export function ownsSkin(id) {
+  return progress.ownedSkins.includes(id);
+}
+
+export function currentSkin() {
+  return SKIN_BY_ID[progress.skin] ? progress.skin : DEFAULT_SKIN;
+}
+
+// 持っているスキンに着替える
+export function wearSkin(id) {
+  if (!ownsSkin(id)) return false;
+  progress.skin = id;
+  save();
+  return true;
+}
+
+// ガチャを1回まわす。
+// 出るのは「まだ持っていないもの」だけなので、同じスキンはぜったいに出ない。
+// 戻り値は { skin } か、まわせなかった理由
+export function rollGacha() {
+  if (progress.ownedSkins.length >= Object.keys(SKIN_BY_ID).length) {
+    return { error: 'コンプリート' };
+  }
+  if (progress.coins < GACHA_COST) return { error: 'コインが足りない' };
+  const skin = rollSkin(progress.ownedSkins);
+  if (!skin) return { error: 'コンプリート' };
+  spend(GACHA_COST);
+  progress.ownedSkins.push(skin.id);
+  save();
+  return { skin };
 }

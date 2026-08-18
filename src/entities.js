@@ -12,10 +12,13 @@ import { floorHeight, STEP_HEIGHT, STEP_SLACK, EYE_HEIGHT } from './player.js';
 import { makeLabel, hpColor } from './label.js';
 
 export class Teammate {
-  constructor(scene, { name, color, position, jobId = 'soldier' }) {
+  constructor(scene, { name, color, position, jobId = 'soldier', skin = null }) {
     this.name = name;
     this.maxHp = JOBS[jobId].hp;
-    this.avatar = makeAvatar(color);
+    this.scene = scene;
+    this.jobId = jobId;
+    this.color = color;
+    this.avatar = makeAvatar(color, 'human', { skin });
     this.avatar.setHat(jobId);
     this.avatar.root.position.copy(position);
     this.downed = false;
@@ -44,6 +47,26 @@ export class Teammate {
 
   #refreshLabel() {
     this.label.draw(this.downed ? `${this.name}（ダウン）` : this.name, this.downed ? '#ff8080' : '#ffffff');
+  }
+
+  // スキンを着がえる。見た目を作り直して、いまの場所と向きをそのまま渡す
+  setSkin(skin) {
+    if (this.skinId === skin) return;
+    this.skinId = skin;
+    const at = this.avatar.root.position.clone();
+    const yaw = this.avatar.root.rotation.y;
+    const visible = this.avatar.root.visible;
+    this.avatar.root.remove(this.label.sprite);
+    this.scene.remove(this.avatar.root);
+    this.avatar.dispose?.();
+    this.avatar = makeAvatar(this.color, 'human', { skin });
+    this.avatar.setHat(this.jobId);
+    this.avatar.setDowned(this.downed);
+    this.avatar.root.position.copy(at);
+    this.avatar.root.rotation.y = yaw;
+    this.avatar.root.visible = visible;
+    this.avatar.root.add(this.label.sprite);
+    this.scene.add(this.avatar.root);
   }
 
   update(dt, mirror) {
