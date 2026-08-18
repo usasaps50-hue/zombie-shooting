@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { QUALITY } from './device.js';
-import { buildingNames, buildingSize, makeBuilding } from './gltfmodel.js';
+import {
+  buildingNames, buildingSize, makeBuilding, hasScenery, makeScenery,
+} from './gltfmodel.js';
 
 // 廃都市の戦場。広すぎると敵を探して歩くだけの時間が長くなるので、
 // street（大通り）と block（街区）を詰めて置き、路地で入り組ませてある。
@@ -485,9 +487,39 @@ export function createWorld() {
     [-17, -3.0, 4.7], [-25, 3.3, 1.7], [-30, -3.2, 4.5],
     [12.5, 12.5, 0.8], [-12.5, 13, 2.3], [13, -12.5, 5.6], [-13, -12.8, 3.9],
   ];
-  for (const [x, z, yaw] of CARS) {
+  // 階段の上り口・降り口をふさぐ置物は置かない。
+  // モデルの車や箱は手作りのものより大きいので、うっかり通せんぼしてしまう
+  const blocksStairs = (object) => {
+    object.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(object).expandByScalar(0.5);
+    return stairPoints.some((s) => box.containsPoint(s.bottom) || box.containsPoint(s.top));
+  };
+
+  // 置物を1つ置く。階段の邪魔になるならやめておく。
+  // solid なら当たり判定もつける
+  const place = (object, x, z, yaw, solid) => {
+    object.position.set(x, 0, z);
+    object.rotation.y = yaw;
+    if (blocksStairs(object)) return false;
+    scene.add(object);
+    if (solid) {
+      object.updateMatrixWorld(true);
+      colliders.push(new THREE.Box3().setFromObject(object));
+    }
+    return true;
+  };
+
+  // 持ってきた車のモデルがあれば、そちらを置く
+  const CAR_MODELS = ['carPickup', 'carSports', 'carTruck', 'carPickupArmored', 'carSportsArmored', 'carTruckArmored'];
+  const usableCars = CAR_MODELS.filter(hasScenery);
+  CARS.forEach(([x, z, yaw], i) => {
+    if (usableCars.length) {
+      if (place(makeScenery(usableCars[i % usableCars.length]), x, z, yaw, true)) return;
+      // 階段の邪魔になる場所だったので、この車は置かない
+      return;
+    }
     car(x, z, yaw, CAR_COLORS[Math.floor(rand() * CAR_COLORS.length)]);
-  }
+  });
 
   // 折れかけの街灯。飾りなので当たり判定はつけない（引っかかると邪魔）
   function lamp(x, z, tilt) {
@@ -506,12 +538,51 @@ export function createWorld() {
     }
     scene.add(group);
   }
-  for (const [x, z, tilt] of [
+  const LAMPS = [
     [-6.2, 13, 0.08], [6.2, 21, -0.05], [-6.2, 28, 0.22],
     [6.2, -14, -0.1], [-6.2, -22, 0.06], [6.2, -29, -0.24],
     [13, -6.2, 0.12], [22, 6.2, -0.07], [29, -6.2, 0.19],
     [-14, 6.2, -0.09], [-23, -6.2, 0.05], [-30, 6.2, -0.2],
-  ]) lamp(x, z, tilt);
+  ];
+  // 持ってきた街灯があれば、そちらを立てる。傾きはそのまま活かして
+  // 「倒れかけている」感じを残す
+  const lampIds = ['streetlight', 'streetlight2'].filter(hasScenery);
+  LAMPS.forEach(([x, z, tilt], i) => {
+    if (lampIds.length) {
+      const model = makeScenery(lampIds[i % lampIds.length]);
+      model.position.set(x, 0, z);
+      model.rotation.set(0, (x > 0 ? -1 : 1) * Math.PI / 2 + (Math.abs(x) < 8 ? Math.PI / 2 : 0), tilt);
+      scene.add(model);
+      return;
+    }
+    lamp(x, z, tilt);
+  });
+
+  // 信号と標識。大通りの入口に置く
+  for (const [id, x, z, yaw] of [
+    ['trafficLight', -5.6, 11.5, 0], ['trafficLight', 5.6, -11.5, Math.PI],
+    ['trafficLight', 11.5, 5.6, -Math.PI / 2], ['trafficLight', -11.5, -5.6, Math.PI / 2],
+    ['signStop', 5.6, 12.5, Math.PI], ['signStop', -5.6, -12.5, 0],
+  ]) {
+    if (!hasScenery(id)) continue;
+    place(makeScenery(id), x, z, yaw, false);
+  }
+
+  // 散らばった小物。遮蔽物になるものだけ当たり判定をつける
+  for (const [id, x, z, yaw, solid] of [
+    ['barrel', -8.5, 15, 0.3, true], ['barrel', -7.6, 16.2, 1.1, true],
+    ['barrel', 8.2, -18, 0.7, true], ['container', 14, 8.5, 0.2, true],
+    ['container', -24, -2, 1.6, true], ['tyres', 7.5, 24, 0.4, true],
+    ['cone', -4.2, 9.5, 0, false], ['cone', 4.4, -10, 0, false],
+    ['cone', 9.8, -4.2, 0, false], ['cone', -10, 4.6, 0, false],
+    ['barrier', -6.5, -15, 0.1, true], ['barrier', 6.5, 20, 3.1, true],
+    ['plasticBarrier', 5.2, 8.5, 0, true], ['plasticBarrier', -5.2, -8.5, 0, true],
+    ['hydrant', -6.4, 6.5, 0, false], ['hydrant', 6.4, -6.5, 0, false],
+    ['trash', -7.2, -20, 0.5, false], ['trash', 7.4, 27, 1.2, false],
+  ]) {
+    if (!hasScenery(id)) continue;
+    place(makeScenery(id), x, z, yaw, solid);
+  }
 
   // コンクリートの車止め。低い遮蔽物として、広場の入口に置く
   for (const [x, z, yaw] of [

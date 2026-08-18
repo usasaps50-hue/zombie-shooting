@@ -72,6 +72,57 @@ const PALETTES = [
 const buildings = new Map();
 const palettes = [];
 
+// ---- 街の置物（車・街灯・信号・小物）----
+// 車はキットの glTF（テクスチャ入り）。街灯と信号は道路パックの FBX（色なし）
+const SCENERY = {
+  // 乗り捨てられた車。6台ぶん
+  carPickup: { url: 'assets/models/zombiekit/Vehicles/glTF/Vehicle_Pickup.gltf', kind: 'gltf' },
+  carPickupArmored: { url: 'assets/models/zombiekit/Vehicles/glTF/Vehicle_Pickup_Armored.gltf', kind: 'gltf' },
+  carSports: { url: 'assets/models/zombiekit/Vehicles/glTF/Vehicle_Sports.gltf', kind: 'gltf' },
+  carSportsArmored: { url: 'assets/models/zombiekit/Vehicles/glTF/Vehicle_Sports_Armored.gltf', kind: 'gltf' },
+  carTruck: { url: 'assets/models/zombiekit/Vehicles/glTF/Vehicle_Truck.gltf', kind: 'gltf' },
+  carTruckArmored: { url: 'assets/models/zombiekit/Vehicles/glTF/Vehicle_Truck_Armored.gltf', kind: 'gltf' },
+  // 街灯・信号・標識。センチで作られているので 1/100 にする
+  // 道路パックは建物と縮尺がちがうので、倍率ではなく「高さ何m」で合わせる
+  streetlight: { url: 'assets/models/streets/FBX/Streetlight_Single.fbx', kind: 'fbx', height: 5.5, color: 0x3f444b },
+  streetlight2: { url: 'assets/models/streets/FBX/Streetlight_Double.fbx', kind: 'fbx', height: 5.8, color: 0x3f444b },
+  trafficLight: { url: 'assets/models/streets/FBX/TrafficLight.fbx', kind: 'fbx', height: 4.2, color: 0x3a3f45 },
+  signStop: { url: 'assets/models/streets/FBX/Sign_Stop.fbx', kind: 'fbx', height: 2.4, color: 0x9c3b33 },
+  // 散らばっている小物
+  barrel: { url: 'assets/models/zombiekit/Environment/glTF/Barrel.gltf', kind: 'gltf' },
+  cone: { url: 'assets/models/zombiekit/Environment/glTF/TrafficCone_1.gltf', kind: 'gltf' },
+  barrier: { url: 'assets/models/zombiekit/Environment/glTF/TrafficBarrier_1.gltf', kind: 'gltf' },
+  plasticBarrier: { url: 'assets/models/zombiekit/Environment/glTF/PlasticBarrier.gltf', kind: 'gltf' },
+  hydrant: { url: 'assets/models/zombiekit/Environment/glTF/FireHydrant.gltf', kind: 'gltf' },
+  container: { url: 'assets/models/zombiekit/Environment/glTF/Container_Red.gltf', kind: 'gltf' },
+  trash: { url: 'assets/models/zombiekit/Environment/glTF/TrashBag_1.gltf', kind: 'gltf' },
+  tyres: { url: 'assets/models/zombiekit/Environment/glTF/Wheels_Stack.gltf', kind: 'gltf' },
+};
+
+// id -> { object, size }
+const scenery = new Map();
+
+export function hasScenery(id) {
+  return scenery.has(id);
+}
+
+export function scenerySize(id) {
+  return scenery.get(id)?.size ?? null;
+}
+
+// 街の置物を1つ作る
+export function makeScenery(id) {
+  const src = scenery.get(id);
+  if (!src) return null;
+  const obj = src.object.clone(true);
+  obj.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.receiveShadow = true;
+  });
+  return obj;
+}
+
 export function buildingNames() {
   return [...buildings.keys()];
 }
@@ -235,7 +286,40 @@ export async function preloadModels() {
     } catch { /* 読めなければ、これまでの箱のビルで出る */ }
   });
 
-  await Promise.all([...jobs, ...propJobs, ...palJobs, ...buildingJobs]);
+  // 街の置物
+  const sceneryJobs = Object.entries(SCENERY).map(async ([id, cfg]) => {
+    try {
+      let obj;
+      if (cfg.kind === 'fbx') {
+        obj = await fbxLoader.loadAsync(cfg.url);
+        // 素材によって単位がばらばらなので、決めた高さに合わせる
+        obj.updateMatrixWorld(true);
+        const raw = new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
+        obj.scale.setScalar(cfg.height ? cfg.height / Math.max(0.001, raw.y) : (cfg.scale ?? 0.01));
+        // 道路パックには色が入っていないので、こちらで塗る
+        obj.traverse((o) => {
+          if (o.isMesh) {
+            o.material = new THREE.MeshStandardMaterial({
+              color: cfg.color ?? 0x6b7078, roughness: 0.85, metalness: 0.1,
+            });
+          }
+        });
+      } else {
+        obj = (await loader.loadAsync(cfg.url)).scene;
+      }
+      obj.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(obj);
+      // 足元が原点に来るようにそろえる
+      obj.position.y -= box.min.y;
+      obj.updateMatrixWorld(true);
+      scenery.set(id, {
+        object: obj,
+        size: new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3()),
+      });
+    } catch { /* 読めなければ、これまでの手作りで出る */ }
+  });
+
+  await Promise.all([...jobs, ...propJobs, ...palJobs, ...buildingJobs, ...sceneryJobs]);
   return {
     characters: [...loaded.keys()],
     props: [...props.keys()],
