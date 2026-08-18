@@ -318,11 +318,18 @@ const CLIMBER_ZOMBIE = {
   climbMinTop: 4.5,
   climbMaxTop: 24,
   climbRange: 30,
+  // 登るのは、相手からこれだけの近さにあるビルだけ。
+  // 遠いビルに登っても、相手が8m以内に来てくれない
+  climbNear: 14,
   climbSpeed: 4.2,
   // 壁に張りついて待っていられる時間。これを過ぎたら、しびれを切らして降りる
-  clingTime: 30,
-  // 壁に張りついたまま待って、相手がこの距離まで来たら落ちてくる
-  dropRange: 8,
+  clingTime: 20,
+  // 相手がビルからこれだけ離れたら、待たずに這い下りて追いかけ直す
+  clingGiveUp: 16,
+  // 壁に張りついたまま待って、相手がこの距離まで来たら落ちてくる。
+  // 廃都市のビルは大通りの中心から9〜10m 離れているので、
+  // 8m にすると道の真ん中を歩いている相手には永久に届かない
+  dropRange: 12,
   dropDamage: 22,
   dropRadius: 2.8,
   dropTime: 0.8,

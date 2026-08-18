@@ -59,6 +59,11 @@ const WANDER_RANGE = 14;
 const TURN_SPEED = 7;
 // これより遠いゾンビは、3フレームに1回だけ考える（そのぶん歩幅を3倍にする）
 const FAR_THINK = 34;
+// 天井ゾンビが壁に張りつくとき、壁からどれだけ離れて取りつくか
+const CLING_GAP = 0.7;
+// 張りついたまま横へ這う速さ（登る速さの何倍か）。
+// 歩いている相手についていける速さにしないと、いつまでも真上に来られない
+const CLING_SLIDE = 1.0;
 
 // 相手を見つけていないゾンビが集まる場所（広場の真ん中）と、
 // そこまで来たら止まる距離
@@ -182,10 +187,16 @@ export class Enemy {
     this.slamTo = new THREE.Vector3();
     // 天井ゾンビ：壁を登っているときの状態
     //  null（地上）／'toWall'（壁へ向かう）／'up'（這い上がる）
-    //  ／'cling'（壁で待つ）／'drop'（落下）
+    //  ／'cling'（壁で待つ）／'down'（這い下りる）／'drop'（落下）
     this.climbState = null;
     this.climbTop = 0;
     this.climbFace = new THREE.Vector3();
+    // 張りついているビルの四角と、その外周のどこにいるか
+    this.climbWall = new THREE.Box3();
+    this.clingS = 0;
+    // 張りついてから、相手にいちばん近づけた距離と、その時刻
+    this.clingBest = Infinity;
+    this.clingStuckAt = 0;
     // 壁に張りついて待つ高さ
     this.clingY = 0;
     // 壁のほうを向く向き
@@ -750,9 +761,11 @@ export class Enemy {
       const cx = (c.min.x + c.max.x) / 2;
       const cz = (c.min.z + c.max.z) / 2;
       if (Math.hypot(cx - pos.x, cz - pos.z) > def.climbRange) continue;
+      // 相手のそばのビルでないと、登っても8m以内に来てくれない
+      const toGoal = Math.hypot(cx - goal.x, cz - goal.z);
+      if (toGoal > def.climbNear) continue;
       // 相手に近いビルほど良い。自分から遠すぎるものは選ばない
-      const score = Math.hypot(cx - goal.x, cz - goal.z)
-        + Math.hypot(cx - pos.x, cz - pos.z) * 0.4;
+      const score = toGoal + Math.hypot(cx - pos.x, cz - pos.z) * 0.15;
       if (score < bestScore) {
         bestScore = score;
         best = c;
@@ -761,33 +774,92 @@ export class Enemy {
     return best;
   }
 
-  // 選んだビルの、いちばん近い側面に取りつく場所を決める
-  #setClimbTarget(wall) {
-    const pos = this.root.position;
-    // 自分の位置をビルの外周に貼りつける
-    const x = THREE.MathUtils.clamp(pos.x, wall.min.x, wall.max.x);
-    const z = THREE.MathUtils.clamp(pos.z, wall.min.z, wall.max.z);
-    // 東西と南北、どちらの面が近いか
-    const dx = Math.min(Math.abs(x - wall.min.x), Math.abs(x - wall.max.x));
-    const dz = Math.min(Math.abs(z - wall.min.z), Math.abs(z - wall.max.z));
-    let fx = x;
-    let fz = z;
-    if (dx < dz) {
-      const west = Math.abs(x - wall.min.x) < Math.abs(x - wall.max.x);
-      fx = west ? wall.min.x - 0.7 : wall.max.x + 0.7;
-      this.climbInX = west ? 1 : -1;
-      this.climbInZ = 0;
-    } else {
-      const north = Math.abs(z - wall.min.z) < Math.abs(z - wall.max.z);
-      fz = north ? wall.min.z - 0.7 : wall.max.z + 0.7;
-      this.climbInX = 0;
-      this.climbInZ = north ? 1 : -1;
-    }
-    this.climbFace.set(fx, 0, fz);
+  // 選んだビルの、相手のいる側の側面に取りつく場所を決める。
+  // 自分に近い面を選ぶと、建物の裏側で待ちぼうけになってしまう
+  #setClimbTarget(wall, goal) {
+    this.climbWall.copy(wall);
     this.climbTop = wall.max.y;
     // 屋上までは登らず、そのすこし下で張りついて待つ。
     // 低いビルでも、飛び降りる高さが出るところまでは登る
     this.clingY = Math.max(3.5, wall.max.y - 1.2);
+    // 相手のいる側の面に取りつく。自分に近い面を選ぶと、建物の裏で待ちぼうけになる
+    const from = goal ?? this.root.position;
+    this.clingS = this.#wallSpotOf(from.x, from.z);
+    this.#applyClingSpot();
+  }
+
+  // ---- ビルの外周を「1本の線」として扱う ----
+  // 角をまたいで這って回れるように、外周ぜんぶを 0 からの長さ（s）で表す。
+  // 面ごとに分けて持つと、角で止まってしまって相手を追えない
+
+  // 外周の四角（壁から CLING_GAP だけ外側）
+  #wallRect() {
+    const w = this.climbWall;
+    return {
+      x0: w.min.x - CLING_GAP, x1: w.max.x + CLING_GAP,
+      z0: w.min.z - CLING_GAP, z1: w.max.z + CLING_GAP,
+    };
+  }
+
+  // その場所の真横にあたる、外周上の長さ（s）
+  #wallSpotOf(px, pz) {
+    const r = this.#wallRect();
+    const w = r.x1 - r.x0;
+    const d = r.z1 - r.z0;
+    const cx = THREE.MathUtils.clamp(px, r.x0, r.x1);
+    const cz = THREE.MathUtils.clamp(pz, r.z0, r.z1);
+    // 4つの面のうち、いちばん近いものを選ぶ
+    const toZ0 = Math.abs(pz - r.z0);
+    const toZ1 = Math.abs(pz - r.z1);
+    const toX0 = Math.abs(px - r.x0);
+    const toX1 = Math.abs(px - r.x1);
+    const near = Math.min(toZ0, toZ1, toX0, toX1);
+    if (near === toZ0) return cx - r.x0;
+    if (near === toX1) return w + (cz - r.z0);
+    if (near === toZ1) return w + d + (r.x1 - cx);
+    return w * 2 + d + (r.z1 - cz);
+  }
+
+  // いまの s から、立ち位置と「壁を向く向き」を決める
+  #applyClingSpot() {
+    const r = this.#wallRect();
+    const w = r.x1 - r.x0;
+    const d = r.z1 - r.z0;
+    const total = (w + d) * 2;
+    const s = ((this.clingS % total) + total) % total;
+    this.clingS = s;
+    if (s < w) {
+      this.climbFace.set(r.x0 + s, 0, r.z0);
+      this.climbInX = 0;
+      this.climbInZ = 1;
+    } else if (s < w + d) {
+      this.climbFace.set(r.x1, 0, r.z0 + (s - w));
+      this.climbInX = -1;
+      this.climbInZ = 0;
+    } else if (s < w * 2 + d) {
+      this.climbFace.set(r.x1 - (s - w - d), 0, r.z1);
+      this.climbInX = 0;
+      this.climbInZ = -1;
+    } else {
+      this.climbFace.set(r.x0, 0, r.z1 - (s - w * 2 - d));
+      this.climbInX = 1;
+      this.climbInZ = 0;
+    }
+  }
+
+  // 壁に張りついたまま、相手のいるほうへ外周を這って回りこむ。
+  // これがないと、相手が8m以内に来ないまま待ちぼうけになる
+  #slideCling(player, dt) {
+    if (!player) return;
+    const r = this.#wallRect();
+    const total = ((r.x1 - r.x0) + (r.z1 - r.z0)) * 2;
+    const want = this.#wallSpotOf(player.position.x, player.position.z);
+    // 外周は輪なので、近いほうの回り方を選ぶ
+    let diff = (((want - this.clingS) % total) + total) % total;
+    if (diff > total / 2) diff -= total;
+    const step = this.def.climbSpeed * CLING_SLIDE * dt;
+    this.clingS += THREE.MathUtils.clamp(diff, -step, step);
+    this.#applyClingSpot();
   }
 
   #giveUpClimb(now) {
@@ -832,6 +904,25 @@ export class Enemy {
       return true;
     }
 
+    // 壁を這い下りている最中。相手がビルから離れたときに使う
+    if (this.climbState === 'down') {
+      pos.x = this.climbFace.x;
+      pos.z = this.climbFace.z;
+      pos.y -= def.climbSpeed * dt;
+      this.#face(Math.atan2(this.climbInX, this.climbInZ), dt * 6);
+      this.#setWallPose(true);
+      this.zombie.setMode('crawl');
+      if (pos.y <= 0) {
+        pos.y = 0;
+        this.#setWallPose(false);
+        this.climbState = null;
+        // 相手を追いかけて、近くのビルですぐ登り直せるように待ちは短く
+        this.nextClimbAt = now + 2;
+        this.#unstick(colliders, structures);
+      }
+      return true;
+    }
+
     // 壁を這い上がっている最中
     if (this.climbState === 'up') {
       pos.x = this.climbFace.x;
@@ -846,6 +937,8 @@ export class Enemy {
         pos.y = this.clingY;
         this.climbState = 'cling';
         this.climbUntil = now + def.clingTime;
+        this.clingBest = Infinity;
+        this.clingStuckAt = now;
       } else if (now > this.climbUntil) {
         // 何かおかしくて登りきれない。あきらめて地面へ戻る
         pos.y = 0;
@@ -856,6 +949,7 @@ export class Enemy {
 
     // 壁に張りついたまま、相手が真下へ来るのを待つ
     if (this.climbState === 'cling') {
+      this.#slideCling(player, dt);
       pos.x = this.climbFace.x;
       pos.z = this.climbFace.z;
       pos.y = this.clingY;
@@ -875,10 +969,16 @@ export class Enemy {
         this.#dropTo(player.position.x, player.position.z, now, onSlamAim, colliders);
         return true;
       }
-      // いつまでも来ないときは、しびれを切らして降りる
-      if (now > this.climbUntil) {
+      // 這って回っても近づけないときは、待たずに這い下りて、
+      // 相手のいるほうのビルで登り直す
+      if (flat < this.clingBest - 0.3) {
+        this.clingBest = flat;
+        this.clingStuckAt = now;
+      }
+      const stuck = now - this.clingStuckAt > 3;
+      if (flat > def.clingGiveUp || stuck || now > this.climbUntil) {
         this.zombie.walkRate = def.animRate ?? 1;
-        this.#dropAtPlayer(player, now, onSlamAim, colliders);
+        this.climbState = 'down';
       }
       return true;
     }
@@ -909,7 +1009,7 @@ export class Enemy {
     if (sees && now >= this.nextClimbAt) {
       const wall = this.#pickWall(colliders, player.position);
       if (wall) {
-        this.#setClimbTarget(wall);
+        this.#setClimbTarget(wall, player.position);
         this.climbState = 'toWall';
         this.climbUntil = now + 12;
         return true;
@@ -1128,6 +1228,13 @@ export class Enemy {
 
     const hears = now < this.alertUntil;
 
+    // 天井ゾンビ。壁を這って登り、張りついたまま相手を待つ。
+    // 相手を見失っても壁から降ろされないよう、ここで先に片づける。
+    // 登れないときは false が返るので、そのまま普通の動きに進む
+    if (this.def.behavior === 'climber'
+      && this.#climberThink(dt, now, pos, player, sees, colliders, structures,
+        ctx.onSlam ?? (() => {}), ctx.onSlamAim ?? (() => {}), onHitPlayer)) return;
+
     if (!sees && !hears) {
       this.attacking = false;
       this.shooting = false;
@@ -1143,12 +1250,6 @@ export class Enemy {
       this.#wander(dt, now, colliders, structures);
       return;
     }
-
-    // 天井ゾンビ。壁を登って屋上から飛び降りる。
-    // 登れないときは false が返るので、そのまま普通の追いかけに進む
-    if (this.def.behavior === 'climber'
-      && this.#climberThink(dt, now, pos, player, sees, colliders, structures,
-        ctx.onSlam ?? (() => {}), ctx.onSlamAim ?? (() => {}), onHitPlayer)) return;
 
     // 叫びゾンビ。殴らず、距離を取りながら仲間を鼓舞する
     if (this.def.behavior === 'shrieker') {
