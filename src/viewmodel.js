@@ -327,10 +327,18 @@ export class ViewModel {
     base.pos.x *= narrow;
     m.scale.setScalar((speared ? 0.75 : flagged ? 0.34 : longHandled ? 0.5 : 1) * (0.6 + narrow * 0.4));
 
-    // 構えているときは、銃を画面の真ん中へ寄せて構え直す
+    // 構えているときは、銃を画面の真ん中へ寄せて構え直す。
+    // 持ってきたモデルは手作りのものより太いので、真後ろから見ると
+    // 画面をふさいでしまう。少し前へ出して下げ、小さめに構える
     if (this.aim && !longHandled) {
-      base.pos.set(0.02 * narrow, -0.13, -0.42);
-      base.rot.set(0, 0, 0);
+      if (hasProp(this.itemId)) {
+        base.pos.set(0, -0.24, -0.8);
+        base.rot.set(0, 0, 0);
+        m.scale.multiplyScalar(0.7);
+      } else {
+        base.pos.set(0.02 * narrow, -0.13, -0.42);
+        base.rot.set(0, 0, 0);
+      }
     }
 
     m.position.copy(base.pos);
