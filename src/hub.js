@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { QUALITY } from './device.js';
-import { Avatar } from './avatar.js';
+import { makeAvatar } from './avatar.js';
 import { canvasTexture, paint } from './textures.js';
 
 // 待機場の広さ。真ん中の広場は何も置かず、建物は外周に並べる
@@ -160,7 +160,7 @@ export function createHub() {
     step.castShadow = true;
     step.receiveShadow = true;
 
-    const avatar = new Avatar(keeper.color);
+    const avatar = makeAvatar(keeper.color, keeper.variant);
     avatar.setHat(keeper.hat);
     avatar.setItem(keeper.item ?? null);
     const inside = new THREE.Vector3(0, 0, -0.55).applyAxisAngle(new THREE.Vector3(0, 1, 0), facing);

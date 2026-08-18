@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Avatar } from './avatar.js';
+import { makeAvatar } from './avatar.js';
 import { Zombie } from './zombie.js';
 import { Mutant } from './mutant.js';
 import { Skeleton } from './skeleton.js';
@@ -15,7 +15,7 @@ export class Teammate {
   constructor(scene, { name, color, position, jobId = 'soldier' }) {
     this.name = name;
     this.maxHp = JOBS[jobId].hp;
-    this.avatar = new Avatar(color);
+    this.avatar = makeAvatar(color);
     this.avatar.setHat(jobId);
     this.avatar.root.position.copy(position);
     this.downed = false;

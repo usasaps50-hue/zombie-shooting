@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Avatar } from './avatar.js';
+import { makeAvatar } from './avatar.js';
 import { makeLabel, makeBubble, hpColor } from './label.js';
 import { NET } from './data/netconfig.js';
 import { JOBS } from './data/jobs.js';
@@ -51,7 +51,7 @@ export class RemotePlayer {
 
     // どのシーンに置いたか覚えておく（待機場とバトルで入れ替わる）
     this.scene = scene;
-    this.avatar = new Avatar(JOBS[this.jobId]?.color ?? 0x5f7f9f);
+    this.avatar = makeAvatar(JOBS[this.jobId]?.color ?? 0x5f7f9f);
     this.avatar.setHat(this.jobId);
     this.label = makeLabel(1.8);
     this.label.sprite.position.y = 2.15;

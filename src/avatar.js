@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { canUseGltfAvatar, GltfAvatar } from './gltfavatar.js';
 import { createItemMesh } from './viewmodel.js';
 import { canvasTexture, paint } from './textures.js';
 
@@ -367,4 +368,12 @@ export class Avatar {
     this.armR.rotation.z = THREE.MathUtils.lerp(this.armR.rotation.z, armRz, dt * 16);
     this.armL.rotation.z = THREE.MathUtils.lerp(this.armL.rotation.z, armLz, dt * 16);
   }
+}
+
+
+// 人の見た目を1つ作る。持ってきたモデルが読めていればそちらを、
+// 読めていなければこれまでの手作りのほうを返す。
+// どちらも同じ使い方（setHat / setItem / setDowned / update）ができる
+export function makeAvatar(color = 0x5f7f9f, variant = 'human') {
+  return canUseGltfAvatar() ? new GltfAvatar(color, variant) : new Avatar(color);
 }

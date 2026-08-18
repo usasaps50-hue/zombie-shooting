@@ -22,6 +22,11 @@ const SOURCES = {
   zombie: 'assets/models/zombiekit/Characters/glTF/Zombie_Basic.gltf',
   zombieChubby: 'assets/models/zombiekit/Characters/glTF/Zombie_Chubby.gltf',
   zombieThin: 'assets/models/zombiekit/Characters/glTF/Zombie_Ribcage.gltf',
+  // 人。武器が手に持たされた状態で入っているので、表示を切り替えて持ち替える
+  human: 'assets/models/zombiekit/Characters/glTF/Characters_Matt.gltf',
+  human2: 'assets/models/zombiekit/Characters/glTF/Characters_Sam.gltf',
+  human3: 'assets/models/zombiekit/Characters/glTF/Characters_Shaun.gltf',
+  human4: 'assets/models/zombiekit/Characters/glTF/Characters_Lis.gltf',
 };
 
 // 動かない置物（武器・街の小物）。
@@ -162,6 +167,11 @@ const ATTACK_HIT = 0.45;
 
 export function isLoaded(id) {
   return loaded.has(id);
+}
+
+// 読み込んだ素の中身。GltfAvatar から使う
+export function sourceOf(id) {
+  return loaded.get(id) ?? null;
 }
 
 // はじめに1回だけ呼ぶ。読めたものだけ使えるようになる
