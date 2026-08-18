@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { QUALITY } from './device.js';
 import {
-  buildingNames, buildingSize, makeBuilding, hasScenery, makeScenery,
+  buildingNames, buildingSize, makeBuilding, hasScenery, makeScenery, ROAD_TILE,
 } from './gltfmodel.js';
 
 // 廃都市の戦場。広すぎると敵を探して歩くだけの時間が長くなるので、
@@ -100,63 +100,68 @@ export function createWorld() {
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // 十字の大通り。トンネルから真ん中まで一本道でつながる
-  for (const road of [[ARENA * 2, ROAD_WIDTH], [ROAD_WIDTH, ARENA * 2]]) {
-    addDecal(0, 0, road[0], road[1], 0x4a4d53, 0.01);
-  }
-
-  // 大通りの中央線。破線にすると道路らしく見える
-  const dashGeo = new THREE.PlaneGeometry(0.34, 2.2);
-  const dashMat = mat(0x9b9270, 1);
-  const dashes = [];
-  for (let d = OPEN_RADIUS + 2; d < ARENA; d += 4.4) {
-    for (const s of [-1, 1]) {
-      dashes.push([0, s * d, 0], [s * d, 0, Math.PI / 2]);
+  // 十字の大通り。持ってきた道路タイル（8m四方・歩道と白線つき）を敷く。
+  // 読めないときは、色をつけた板で代わりにする
+  const roadTiles = hasScenery('roadStraight') && hasScenery('road4Way');
+  if (roadTiles) {
+    const cracks = ['roadCrack1', 'roadCrack2'].filter(hasScenery);
+    const steps = Math.floor((ARENA - ROAD_TILE / 2) / ROAD_TILE);
+    // 交差点
+    const cross = makeScenery('road4Way');
+    cross.position.set(0, 0, 0);
+    scene.add(cross);
+    // 南北と東西へ、まっすぐ伸ばす
+    for (let i = 1; i <= steps; i++) {
+      for (const [dx, dz] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+        // ときどきひび割れたタイルを混ぜる
+        const useCrack = cracks.length && (i * 3 + dx * 7 + dz * 11) % 4 === 0;
+        const tile = makeScenery(useCrack ? cracks[i % cracks.length] : 'roadStraight');
+        tile.position.set(dx * i * ROAD_TILE, 0, dz * i * ROAD_TILE);
+        // 東西の道は90度回す
+        tile.rotation.y = dx ? Math.PI / 2 : 0;
+        scene.add(tile);
+      }
+    }
+  } else {
+    for (const road of [[ARENA * 2, ROAD_WIDTH], [ROAD_WIDTH, ARENA * 2]]) {
+      addDecal(0, 0, road[0], road[1], 0x4a4d53, 0.01);
     }
   }
-  const dashMesh = new THREE.InstancedMesh(dashGeo, dashMat, dashes.length);
-  dashes.forEach(([x, z, rot], i) => {
-    const m = new THREE.Matrix4()
-      .makeRotationX(-Math.PI / 2)
-      .premultiply(new THREE.Matrix4().makeRotationY(rot))
-      .setPosition(x, 0.02, z);
-    dashMesh.setMatrixAt(i, m);
-  });
-  dashMesh.receiveShadow = true;
-  scene.add(dashMesh);
 
-  // 広場。まん中のロータリーのつもり
-  const plaza = new THREE.Mesh(new THREE.CircleGeometry(OPEN_RADIUS, 40), mat(0x51545a, 1));
-  plaza.rotation.x = -Math.PI / 2;
-  plaza.position.y = 0.02;
-  plaza.receiveShadow = true;
-  scene.add(plaza);
+  // 道路タイルを敷けないときのために、白線と広場の丸だけ残す
+  if (!roadTiles) {
+    const dashGeo = new THREE.PlaneGeometry(0.34, 2.2);
+    const dashMat = mat(0x9b9270, 1);
+    const dashes = [];
+    for (let d = OPEN_RADIUS + 2; d < ARENA; d += 4.4) {
+      for (const s2 of [-1, 1]) dashes.push([0, s2 * d, 0], [s2 * d, 0, Math.PI / 2]);
+    }
+    const dashMesh = new THREE.InstancedMesh(dashGeo, dashMat, dashes.length);
+    dashes.forEach(([x, z, rot], i) => {
+      dashMesh.setMatrixAt(i, new THREE.Matrix4()
+        .makeRotationX(-Math.PI / 2)
+        .premultiply(new THREE.Matrix4().makeRotationY(rot))
+        .setPosition(x, 0.02, z));
+    });
+    dashMesh.receiveShadow = true;
+    scene.add(dashMesh);
 
-  // 広場の焼け跡。当たり判定のない模様なので、戦いの邪魔にはならない
-  for (const [x, z, r, color] of [
-    [-4.5, 2.5, 3.2, 0x33353a], [3.8, -3.4, 2.6, 0x2f3136], [1.2, 5.6, 2.0, 0x383a3f],
-    [-6.2, -5.5, 1.6, 0x353840], [6.4, 4.2, 1.4, 0x303237],
-  ]) {
-    const scorch = new THREE.Mesh(new THREE.CircleGeometry(r, 12), mat(color, 1));
-    scorch.rotation.x = -Math.PI / 2;
-    // 円をすこし歪ませて、自然な焦げ跡に見せる
-    scorch.scale.set(1, 0.7 + (r % 0.5), 1);
-    scorch.position.set(x, 0.025, z);
-    scorch.receiveShadow = true;
-    scene.add(scorch);
-  }
+    const plaza = new THREE.Mesh(new THREE.CircleGeometry(OPEN_RADIUS, 40), mat(0x51545a, 1));
+    plaza.rotation.x = -Math.PI / 2;
+    plaza.position.y = 0.02;
+    plaza.receiveShadow = true;
+    scene.add(plaza);
 
-  // ---- 歩道。大通りの両側に一段高い縁石を置いて、街路らしくする ----
-  const CURB_H = 0.16;
-  for (const s of [-1, 1]) {
-    for (const along of [-1, 1]) {
-      const start = OPEN_RADIUS + 1;
-      const len = ARENA - start;
-      const mid = along * (start + len / 2);
-      // 南北の通りの両脇
-      addBox(s * (ROAD_WIDTH / 2 + 1.1), 0, mid, 2.2, CURB_H, len, 0x585b61, false);
-      // 東西の通りの両脇
-      addBox(mid, 0, s * (ROAD_WIDTH / 2 + 1.1), len, CURB_H, 2.2, 0x585b61, false);
+    // 歩道の縁石
+    const CURB_H = 0.16;
+    for (const side of [-1, 1]) {
+      for (const along of [-1, 1]) {
+        const start2 = OPEN_RADIUS + 1;
+        const len = ARENA - start2;
+        const mid = along * (start2 + len / 2);
+        addBox(side * (ROAD_WIDTH / 2 + 1.1), 0, mid, 2.2, CURB_H, len, 0x585b61, false);
+        addBox(mid, 0, side * (ROAD_WIDTH / 2 + 1.1), len, CURB_H, 2.2, 0x585b61, false);
+      }
     }
   }
 
@@ -600,52 +605,52 @@ export function createWorld() {
     colliders.push(new THREE.Box3().setFromObject(barrier));
   }
 
-  // 枯れ木。歩道ぞいに立てて、街路樹だった感じを出す
-  function deadTree(x, z) {
-    const group = new THREE.Group();
-    group.position.set(x, 0, z);
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 3.4, 6), mat(0x4a3f33, 0.95));
-    trunk.position.y = 1.7;
-    trunk.castShadow = true;
-    group.add(trunk);
-    for (const [ax, ay, az, rot] of [[0.5, 3.0, 0, 0.7], [-0.45, 3.3, 0.2, -0.8], [0.1, 3.5, -0.5, 0.5]]) {
-      const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.11, 1.4, 5), mat(0x4a3f33, 0.95));
-      branch.position.set(ax, ay, az);
-      branch.rotation.set(rot * 0.6, 0, rot);
-      branch.castShadow = true;
-      group.add(branch);
+  // 散らばった瓦礫。持ってきた小物があればそちらを、無ければ石ころを転がす
+  const debrisIds = ['cinder', 'pallet', 'palletBroken', 'trash', 'trash2', 'pipes', 'couch', 'tyres', 'barrel']
+    .filter(hasScenery);
+  if (debrisIds.length) {
+    for (let i = 0; i < 55; i++) {
+      const angle = rand() * Math.PI * 2;
+      const dist = OPEN_RADIUS - 3 + rand() * (ARENA - OPEN_RADIUS);
+      const x = Math.sin(angle) * dist;
+      const z = Math.cos(angle) * dist;
+      // 大通りのど真ん中は空けておく（通り道をふさがない）
+      if (Math.abs(x) < 2.2 && Math.abs(z) < ARENA) continue;
+      if (Math.abs(z) < 2.2 && Math.abs(x) < ARENA) continue;
+      const model = makeScenery(debrisIds[Math.floor(rand() * debrisIds.length)]);
+      place(model, x, z, rand() * Math.PI * 2, false);
     }
-    scene.add(group);
+    // 血のあと。地面に貼りつく模様
+    for (const id of ['blood', 'blood2'].filter(hasScenery)) {
+      for (let i = 0; i < 5; i++) {
+        const a = rand() * Math.PI * 2;
+        const d = OPEN_RADIUS - 6 + rand() * 16;
+        place(makeScenery(id), Math.sin(a) * d, Math.cos(a) * d, rand() * Math.PI * 2, false);
+      }
+    }
+    // 給水塔。遠くからも見える街の目印
+    if (hasScenery('waterTower')) place(makeScenery('waterTower'), -26, 24, 0.4, true);
+  } else {
+    const rubbleGeo = new THREE.IcosahedronGeometry(0.55, 0);
+    const rubbleMesh = new THREE.InstancedMesh(rubbleGeo, mat(0x4c4944, 1), 90);
+    const m4 = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    const scl = new THREE.Vector3();
+    for (let i = 0; i < 90; i++) {
+      const angle = rand() * Math.PI * 2;
+      const dist = OPEN_RADIUS - 2 + rand() * (ARENA - OPEN_RADIUS);
+      const sc = 0.5 + rand() * 1.1;
+      e.set(rand() * 3, rand() * 3, rand() * 3);
+      q.setFromEuler(e);
+      scl.set(sc, sc * 0.7, sc);
+      m4.compose(new THREE.Vector3(Math.sin(angle) * dist, 0.15 + sc * 0.15, Math.cos(angle) * dist), q, scl);
+      rubbleMesh.setMatrixAt(i, m4);
+    }
+    rubbleMesh.castShadow = true;
+    rubbleMesh.receiveShadow = true;
+    scene.add(rubbleMesh);
   }
-  for (const [x, z] of [
-    [-6.2, 17.5], [6.2, 25.5], [6.2, -18.5], [-6.2, -27],
-    [17.5, 6.2], [26, -6.2], [-18.5, -6.2], [-27, 6.2],
-  ]) deadTree(x, z);
-
-  // ---- 転がっている瓦礫。当たり判定はつけず、見た目だけ ----
-  // これも数が多いので、まとめて1回で描く
-  const rubbleGeo = new THREE.IcosahedronGeometry(0.55, 0);
-  const rubbleMesh = new THREE.InstancedMesh(rubbleGeo, mat(0x4c4944, 1), 90);
-  const m4 = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  const e = new THREE.Euler();
-  const scl = new THREE.Vector3();
-  for (let i = 0; i < 90; i++) {
-    const angle = rand() * Math.PI * 2;
-    const dist = OPEN_RADIUS - 2 + rand() * (ARENA - OPEN_RADIUS);
-    const s = 0.5 + rand() * 1.1;
-    e.set(rand() * 3, rand() * 3, rand() * 3);
-    q.setFromEuler(e);
-    scl.set(s, s * 0.7, s);
-    m4.compose(
-      new THREE.Vector3(Math.sin(angle) * dist, 0.15 + s * 0.15, Math.cos(angle) * dist),
-      q, scl
-    );
-    rubbleMesh.setMatrixAt(i, m4);
-  }
-  rubbleMesh.castShadow = true;
-  rubbleMesh.receiveShadow = true;
-  scene.add(rubbleMesh);
 
   return { scene, colliders, spawns, stairPoints };
 }

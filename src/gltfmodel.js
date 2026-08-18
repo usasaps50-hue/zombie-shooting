@@ -62,17 +62,24 @@ const BUILDING_NAMES = [
   '6Story_Stack',
 ];
 
+// 街に並べたときの色の出かた。落ち着いた色を多めに、
+// 派手な色は少しだけ混ぜる（同じ名前を複数回書くと、それだけ出やすくなる）
 const PALETTES = [
-  'Texture_Grey', 'Texture_Light', 'Texture_Light2', 'Texture_Dark',
-  'Texture_Red', 'Texture_Blue', 'Texture_DarkBlue', 'Texture_DarkPurple',
-  'Texture_Yellow', 'Texture_Casino',
+  'Texture_Grey', 'Texture_Grey', 'Texture_Grey',
+  'Texture_Light', 'Texture_Light', 'Texture_Light2', 'Texture_Light2',
+  'Texture_Dark', 'Texture_Dark',
+  'Texture_DarkBlue', 'Texture_DarkPurple',
+  'Texture_Red', 'Texture_Blue', 'Texture_Yellow', 'Texture_Casino',
 ];
 
 // name -> { object, size }
 const buildings = new Map();
 const palettes = [];
 
-// ---- 街の置物（車・街灯・信号・小物）----
+// 道路タイル1枚の大きさ（m）
+export const ROAD_TILE = 8;
+
+// ---- 街の置物（車・街灯・信号・小物・道路）----
 // 車はキットの glTF（テクスチャ入り）。街灯と信号は道路パックの FBX（色なし）
 const SCENERY = {
   // 乗り捨てられた車。6台ぶん
@@ -96,6 +103,22 @@ const SCENERY = {
   hydrant: { url: 'assets/models/zombiekit/Environment/glTF/FireHydrant.gltf', kind: 'gltf' },
   container: { url: 'assets/models/zombiekit/Environment/glTF/Container_Red.gltf', kind: 'gltf' },
   trash: { url: 'assets/models/zombiekit/Environment/glTF/TrashBag_1.gltf', kind: 'gltf' },
+  trash2: { url: 'assets/models/zombiekit/Environment/glTF/TrashBag_2.gltf', kind: 'gltf' },
+  cinder: { url: 'assets/models/zombiekit/Environment/glTF/CinderBlock.gltf', kind: 'gltf' },
+  pallet: { url: 'assets/models/zombiekit/Environment/glTF/Pallet.gltf', kind: 'gltf' },
+  palletBroken: { url: 'assets/models/zombiekit/Environment/glTF/Pallet_Broken.gltf', kind: 'gltf' },
+  pipes: { url: 'assets/models/zombiekit/Environment/glTF/Pipes.gltf', kind: 'gltf' },
+  couch: { url: 'assets/models/zombiekit/Environment/glTF/Couch.gltf', kind: 'gltf' },
+  waterTower: { url: 'assets/models/zombiekit/Environment/glTF/WaterTower.gltf', kind: 'gltf' },
+  blood: { url: 'assets/models/zombiekit/Environment/glTF/Blood_1.gltf', kind: 'gltf' },
+  blood2: { url: 'assets/models/zombiekit/Environment/glTF/Blood_2.gltf', kind: 'gltf' },
+  containerGreen: { url: 'assets/models/zombiekit/Environment/glTF/Container_Green.gltf', kind: 'gltf' },
+  // 道路タイル。8m四方で、歩道と白線が付いている
+  roadStraight: { url: 'assets/models/zombiekit/Environment/glTF/Street_Straight.gltf', kind: 'gltf' },
+  roadCrack1: { url: 'assets/models/zombiekit/Environment/glTF/Street_Straight_Crack1.gltf', kind: 'gltf' },
+  roadCrack2: { url: 'assets/models/zombiekit/Environment/glTF/Street_Straight_Crack2.gltf', kind: 'gltf' },
+  road4Way: { url: 'assets/models/zombiekit/Environment/glTF/Street_4Way.gltf', kind: 'gltf' },
+  roadT: { url: 'assets/models/zombiekit/Environment/glTF/Street_T.gltf', kind: 'gltf' },
   tyres: { url: 'assets/models/zombiekit/Environment/glTF/Wheels_Stack.gltf', kind: 'gltf' },
 };
 
@@ -255,8 +278,10 @@ export async function preloadModels() {
     }
   });
 
-  // 色パレット。小さいので、にじまないよう「点のまま」拡大する
-  const palJobs = PALETTES.map(async (name) => {
+  // 色パレット。小さいので、にじまないよう「点のまま」拡大する。
+  // 同じ絵を何度も読まないよう、まず種類ごとに1回だけ読む
+  const paletteFiles = new Map();
+  const palJobs = [...new Set(PALETTES)].map(async (name) => {
     try {
       const tex = await texLoader.loadAsync(`${PALETTE_DIR}${name}.png`);
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -265,7 +290,7 @@ export async function preloadModels() {
       tex.minFilter = THREE.NearestFilter;
       tex.generateMipmaps = false;
       tex.flipY = false;
-      palettes.push(tex);
+      paletteFiles.set(name, tex);
     } catch { /* 読めなければ色なしで出る */ }
   });
 
@@ -320,6 +345,13 @@ export async function preloadModels() {
   });
 
   await Promise.all([...jobs, ...propJobs, ...palJobs, ...buildingJobs, ...sceneryJobs]);
+
+  // 読み終わってから、書いた順どおりに並べる。
+  // 読めた順に入れると、開くたびに街の色が変わってしまう
+  for (const name of PALETTES) {
+    const tex = paletteFiles.get(name);
+    if (tex) palettes.push(tex);
+  }
   return {
     characters: [...loaded.keys()],
     props: [...props.keys()],
