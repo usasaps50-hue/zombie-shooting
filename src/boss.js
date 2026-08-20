@@ -423,16 +423,24 @@ export class TitanBrain {
     this.enemy.root.rotation.y = this.enemy.facing + Math.PI;
   }
 
-  // 壁にぶつからないように1歩動く。巨体なので当たり判定も大きい
+  // 壁にぶつからないように1歩動く。巨体なので当たり判定も大きい。
+  //
+  // 体の半径は1.9m（直径3.8m）ある。大通りは8m幅だが、両わきに車と
+  // コンテナが止まっているので、通れるすきまは3.4mしかない。
+  // そのままだと大通りのどこにも入れず、湧いた場所から一歩も動けなくなる。
+  // なので、踏み越えられる高さのものは無いものとして扱う
   #step(dx, dz, colliders, structures) {
     const pos = this.enemy.root.position;
     const box = new THREE.Box3();
+    // これより低いもの（車・コンテナ・バリケード）は踏み越える。
+    // ビルと場外の壁はこれより高いので、ちゃんとぶつかる
+    const stepOver = pos.y + Math.min(3.0, this.enemy.def.height * 0.5);
     const blocked = (x, z) => {
       box.min.set(x - RADIUS, pos.y + 1.2, z - RADIUS);
       // 背丈は敵の設定から取る。this.height は存在しないので、
       // 使うと箱が NaN になり「どこも通れない」と判定されて一歩も動けなくなる
       box.max.set(x + RADIUS, pos.y + this.enemy.def.height * 0.7, z + RADIUS);
-      if (colliders.some((c) => c.intersectsBox(box))) return true;
+      if (colliders.some((c) => c.max.y > stepOver && c.intersectsBox(box))) return true;
       return structures.some((s) => s.alive && s.box.intersectsBox(box));
     };
     for (const [ax, az] of [[dx, 0], [0, dz]]) {
@@ -441,7 +449,9 @@ export class TitanBrain {
       pos.x += ax;
       pos.z += az;
     }
-    const floor = floorHeight(colliders, pos.x, pos.z, pos.y, RADIUS);
+    // 床の高さも、踏み越えるものは数えない。車の上に乗り上げてしまう
+    const ground = colliders.filter((c) => c.max.y > stepOver);
+    const floor = floorHeight(ground, pos.x, pos.z, pos.y, RADIUS);
     pos.y = floor > pos.y ? floor : THREE.MathUtils.lerp(pos.y, floor, 0.35);
   }
 }
