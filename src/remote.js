@@ -3,6 +3,7 @@ import { makeAvatar } from './avatar.js';
 import { makeLabel, makeBubble, hpColor } from './label.js';
 import { NET } from './data/netconfig.js';
 import { JOBS } from './data/jobs.js';
+import { loadSkin, skinReady } from './skinmodel.js';
 
 // 他のプレイヤーの見た目。位置は受け取ったところへなめらかに寄せる
 // （10回/秒しか届かないので、そのまま置くとカクカクする）
@@ -36,7 +37,7 @@ export function packPlayer(player, { itemId, gold, silencer, anim, feetY }) {
 }
 
 export class RemotePlayer {
-  constructor(scene, { id, name, jobId }) {
+  constructor(scene, { id, name, jobId, skin }) {
     this.id = id;
     this.name = name || 'プレイヤー';
     this.jobId = jobId ?? 'soldier';
@@ -51,8 +52,11 @@ export class RemotePlayer {
 
     // どのシーンに置いたか覚えておく（待機場とバトルで入れ替わる）
     this.scene = scene;
-    this.avatar = makeAvatar(JOBS[this.jobId]?.color ?? 0x5f7f9f);
+    // 相手が着ているスキン。まだ読めていなければ、あとから着せかえる
+    this.skin = skin ?? null;
+    this.avatar = makeAvatar(JOBS[this.jobId]?.color ?? 0x5f7f9f, 'human', { skin: this.skin });
     this.avatar.setHat(this.jobId);
+    if (this.skin && !skinReady(this.skin)) this.#wearWhenReady(this.skin);
     this.label = makeLabel(1.8);
     this.label.sprite.position.y = 2.15;
     this.avatar.root.add(this.label.sprite);
@@ -93,7 +97,26 @@ export class RemotePlayer {
     return out.copy(this.position).setY(this.position.y + 1.5);
   }
 
-  setProfile({ name, jobId }) {
+  // スキンのモデルは重いので、届いたら読み込んで、読めてから着せかえる
+  #wearWhenReady(skin) {
+    loadSkin(skin).then(() => {
+      if (this.skin !== skin || !skinReady(skin)) return;
+      const at = this.avatar.root.position.clone();
+      const yaw = this.avatar.root.rotation.y;
+      this.avatar.root.remove(this.label.sprite);
+      this.scene.remove(this.avatar.root);
+      this.avatar.dispose?.();
+      this.avatar = makeAvatar(JOBS[this.jobId]?.color ?? 0x5f7f9f, 'human', { skin });
+      this.avatar.setHat(this.jobId);
+      this.avatar.setDowned(this.downed);
+      this.avatar.root.position.copy(at);
+      this.avatar.root.rotation.y = yaw;
+      this.avatar.root.add(this.label.sprite);
+      this.scene.add(this.avatar.root);
+    });
+  }
+
+  setProfile({ name, jobId, skin }) {
     let changed = false;
     if (name && name !== this.name) {
       this.name = name;
@@ -103,6 +126,10 @@ export class RemotePlayer {
       this.jobId = jobId;
       this.avatar.setHat(jobId);
       changed = true;
+    }
+    if (skin && skin !== this.skin) {
+      this.skin = skin;
+      this.#wearWhenReady(skin);
     }
     if (changed) this.#refreshLabel();
   }

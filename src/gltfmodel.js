@@ -595,6 +595,16 @@ export class GltfCharacter {
     return this.mode === 'death' && this.modeTime >= this.#duration + 0.8;
   }
 
+  // 紫ゾンビが地面にもぐりきったか／出てきて身構えたか。
+  // これを返さないと、もぐったまま止まって、無敵のまま動かなくなる
+  get burrowFinished() {
+    return this.mode === 'burrow' && this.modeTime >= this.#duration;
+  }
+
+  get emergeFinished() {
+    return this.mode === 'emerge' && this.modeTime >= this.#duration;
+  }
+
   // スケルトンの組み直し用。いまは使わないが、形をそろえておく
   get reviveWindow() {
     return this.mode === 'death' && this.modeTime > 0.5 && this.modeTime < this.#duration;

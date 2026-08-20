@@ -6,9 +6,12 @@ import { ENEMIES } from './data/jobs.js';
 
 // ウェーブの進行役。決まった数を小分けに湧かせて、全部倒したら次へ進む
 export class Waves {
-  constructor(pool, spawns, { onWaveStart, onWaveClear, onBossSpawn }) {
+  constructor(pool, spawns, { onWaveStart, onWaveClear, onBossSpawn, bossSpawn = null }) {
     this.pool = pool;
     this.spawns = spawns;
+    // ボスだけの湧き場所。大きすぎてトンネルをくぐれないので、
+    // ふつうのゾンビとは別の、街の内がわから出す
+    this.bossSpawn = bossSpawn ?? spawns[0];
     this.onWaveStart = onWaveStart;
     this.onWaveClear = onWaveClear;
     this.onBossSpawn = onBossSpawn;
@@ -67,7 +70,7 @@ export class Waves {
       const slot = this.pool.find((e) => !e.active);
       if (slot) {
         this.bossPending = false;
-        slot.spawnAs(this.bossId, this.spawns[0].clone(), bossHpScale(this.wave));
+        slot.spawnAs(this.bossId, this.bossSpawn.clone(), bossHpScale(this.wave));
         this.left--;
         this.onBossSpawn?.(slot);
       }

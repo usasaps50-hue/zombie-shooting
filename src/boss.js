@@ -429,7 +429,9 @@ export class TitanBrain {
     const box = new THREE.Box3();
     const blocked = (x, z) => {
       box.min.set(x - RADIUS, pos.y + 1.2, z - RADIUS);
-      box.max.set(x + RADIUS, pos.y + this.height * 0.7, z + RADIUS);
+      // 背丈は敵の設定から取る。this.height は存在しないので、
+      // 使うと箱が NaN になり「どこも通れない」と判定されて一歩も動けなくなる
+      box.max.set(x + RADIUS, pos.y + this.enemy.def.height * 0.7, z + RADIUS);
       if (colliders.some((c) => c.intersectsBox(box))) return true;
       return structures.some((s) => s.alive && s.box.intersectsBox(box));
     };

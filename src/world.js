@@ -496,5 +496,10 @@ export function createWorld() {
     }
   }
 
-  return { scene, colliders, spawns, stairPoints };
+  // ボスが出てくる場所。トンネルは高さ2.6mしかなく、
+  // タイタン（7m）やマザー（5.2m）はくぐれないので、内がわから出す。
+  // 東の大通りは陸橋がかかっていないので、大きい体でもつかえない
+  const bossSpawn = new THREE.Vector3(ARENA - 12, 0, 0);
+
+  return { scene, colliders, spawns, bossSpawn, stairPoints };
 }

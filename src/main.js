@@ -63,7 +63,7 @@ const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 3
 // 読めなくても手作りのモデルで遊べるので、失敗しても止めない
 await preloadModels();
 
-const { scene, colliders, spawns, stairPoints } = createWorld();
+const { scene, colliders, spawns, bossSpawn, stairPoints } = createWorld();
 scene.add(camera);
 
 const input = new Input(canvas);
@@ -91,6 +91,7 @@ const enemies = Array.from(
 );
 
 const waves = new Waves(enemies, spawns, {
+  bossSpawn,
   onWaveStart: (wave, count) => {
     sfx.play('wave');
     hud.setToast(`ウェーブ ${wave} — ゾンビ ${count} 体`, 2.6);
@@ -234,6 +235,7 @@ function enterHub(next) {
   net.join(HUB_ROOM, {
     name: loadout.name || playerName(),
     jobId: loadout.jobId,
+    skin: currentSkin(),
   }).catch(() => {});
 }
 
@@ -300,6 +302,7 @@ function startGame(loadout) {
   net.join(loadout.passphrase, {
     name: loadout.name || playerName(),
     jobId: job.id,
+    skin: currentSkin(),
   }).catch(() => {});
 }
 
