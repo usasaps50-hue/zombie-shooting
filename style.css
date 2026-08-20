@@ -21,7 +21,11 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
-canvas { display: block; position: fixed; inset: 0; }
+/* 画面いっぱいに広げるのはゲーム本体の canvas だけ。
+   すべての canvas に position:fixed をかけると、レーダーやスキンの
+   プレビューまで画面全体をおおって、下のボタンが押せなくなる */
+canvas { display: block; }
+#game { position: fixed; inset: 0; }
 .hidden { display: none !important; }
 
 /* ---------- 画面（ロビー・ポーズ） ---------- */
@@ -499,6 +503,33 @@ body.touch .boss-track { height: 11px; }
   font-weight: 700;
   color: #10141a;
 }
+/* スマホの縦持ち。プレビューは小さめにして、一覧が見えるようにする */
 @media (max-width: 560px) {
-  #skin-canvas { height: 160px; }
+  #skin-canvas { height: min(180px, 26vh); }
+}
+
+/* スマホの横持ち。背が低いので、左にプレビュー・右に一覧の2段組みにする。
+   縦にならべると、プレビューだけで画面がうまってしまう */
+@media (orientation: landscape) and (max-height: 520px) {
+  #shop.skin-mode .panel {
+    width: min(820px, 100%);
+    display: grid;
+    grid-template-columns: minmax(180px, 38%) 1fr;
+    grid-template-areas:
+      "head head"
+      "note note"
+      "prev list"
+      "close close";
+    column-gap: 12px;
+    row-gap: 8px;
+    align-items: start;
+  }
+  #shop.skin-mode .shop-head { grid-area: head; }
+  #shop.skin-mode #shop-note { grid-area: note; }
+  #shop.skin-mode #skin-preview { grid-area: prev; margin: 0; align-self: stretch; }
+  #shop.skin-mode #shop-list { grid-area: list; margin: 0; max-height: 62vh; }
+  #shop.skin-mode #shop-close { grid-area: close; }
+  #shop.skin-mode #skin-canvas { height: min(62vh, 240px); }
+  /* 指で押しやすいように、行の高さを詰めすぎない */
+  #shop.skin-mode .shop-card { min-height: 44px; }
 }

@@ -64,6 +64,7 @@ export class Shop {
 
   close() {
     this.el.classList.add('hidden');
+    this.el.classList.remove('skin-mode');
     this.kind = null;
     this.preview?.hide();
   }
@@ -79,8 +80,12 @@ export class Shop {
     };
     this.listEl.innerHTML = '';
     this.coinsEl.textContent = `🪙 ${progress.coins}`;
-    // プレビューはスキンショップのときだけ出す
-    if (this.kind !== 'shopSkin') this.preview?.hide();
+    // プレビューはスキンショップのときだけ出す。
+    // スマホの横画面では、左にプレビュー・右に一覧の2段組みにしたいので、
+    // 画面ぜんたいに目印のクラスを付けて CSS 側で組み替える
+    const skinMode = this.kind === 'shopSkin';
+    this.el.classList.toggle('skin-mode', skinMode);
+    if (!skinMode) this.preview?.hide();
     // バトルゲートでは「出発する」が主役なので、閉じるボタンは控えめにする
     const gate = this.kind === 'battle';
     this.closeBtn.textContent = gate ? 'やめる' : '話を終える';

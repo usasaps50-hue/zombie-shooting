@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { loadSkin, skinReady, SkinAvatar } from './skinmodel.js';
 import { SKIN_BY_ID } from './data/skins.js';
+import { IS_TOUCH } from './device.js';
 
 // スキンショップの3Dプレビュー。
 // 選んだスキンを、その場でぐるぐる回して見られるようにする。
@@ -27,7 +28,11 @@ export class SkinPreview {
       this.lastX = x;
     };
     const up = () => { this.dragging = false; };
-    this.canvas.addEventListener('pointerdown', (e) => { down(e.clientX); this.canvas.setPointerCapture(e.pointerId); });
+    this.canvas.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      down(e.clientX);
+      this.canvas.setPointerCapture(e.pointerId);
+    });
     this.canvas.addEventListener('pointermove', (e) => move(e.clientX));
     this.canvas.addEventListener('pointerup', up);
     this.canvas.addEventListener('pointercancel', up);
@@ -35,8 +40,15 @@ export class SkinPreview {
 
   #setup() {
     if (this.renderer) return;
-    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    // スマホでは、ゲーム本体の描画と2つ同時に動くことになる。
+    // ふちのなめらかさを切って、細かさも控えめにして軽くする
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: this.canvas,
+      antialias: !IS_TOUCH,
+      alpha: true,
+      powerPreference: IS_TOUCH ? 'low-power' : 'default',
+    });
+    this.renderer.setPixelRatio(Math.min(IS_TOUCH ? 1.5 : 2, window.devicePixelRatio || 1));
     this.scene = new THREE.Scene();
     this.scene.add(new THREE.HemisphereLight(0xdfe6ee, 0x2a3038, 2.2));
     const key = new THREE.DirectionalLight(0xfff3dd, 2.0);
