@@ -218,7 +218,7 @@ export class Shop {
       const tag = `<span class="skin-rarity" style="background:${r.color}">${r.name}</span>`;
       const row = this.#row(on, '<span class="shop-emoji">' + (owned ? '🧍' : '❔') + '</span>',
         owned ? skin.name : '？？？',
-        owned ? `${tag}${this.viewSkin === skin.id ? '見ているところ' : 'えらぶと着られるよ'}`
+        owned ? `${tag}${on ? 'いま着ているよ' : '押すと着がえるよ'}`
           : `${tag}ガチャで出るのを待とう`,
         owned ? (on ? '着ている' : '着る') : '—',
         () => {
@@ -226,12 +226,9 @@ export class Shop {
             this.noteEl.textContent = 'これはまだ持っていないよ。ガチャで当てよう。';
             return;
           }
-          // 1回目のタップで見る、着ているものをもう一度タップすると着替える
-          if (this.viewSkin !== skin.id) {
-            this.viewSkin = skin.id;
-            this.render();
-            return;
-          }
+          // 押したら、その場で着がえてプレビューにも出す。
+          // 「1回目は見るだけ、2回目で着る」だと、押しても何も変わらないように見える
+          this.viewSkin = skin.id;
           wearSkin(skin.id);
           this.render();
           this.onChange();

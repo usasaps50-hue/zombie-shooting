@@ -497,10 +497,59 @@ export function createHub() {
     }
   }
 
+  // ---- 姿見（すがたみ）。いま着ているスキンが立っている台 ----
+  // ゲームは一人称なので、自分の姿は自分から見えない。
+  // ここに立たせておけば、着がえた結果をその場で確かめられる
+  const mirrorAngle = Math.PI * 0.25 - 0.42;
+  const mirrorPos = spot(mirrorAngle, PLAZA_RADIUS + 1.6);
+  const mirrorFacing = mirrorAngle + Math.PI;
+  // 台。パレットを2枚重ねる
+  let standTop = 0;
+  for (let i = 0; i < 2; i++) {
+    const pad = makeScenery('pallet');
+    if (!pad) break;
+    pad.position.set(mirrorPos.x, standTop, mirrorPos.z);
+    pad.rotation.y = mirrorFacing;
+    pad.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    scene.add(pad);
+    standTop += scenerySize('pallet').y;
+  }
+  // 足元の光る輪。遠くからでも「ここに何かある」と分かる
+  const mirrorRing = new THREE.Mesh(
+    new THREE.RingGeometry(1.5, 1.8, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0x8fd0ff, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide,
+    })
+  );
+  mirrorRing.rotation.x = -Math.PI / 2;
+  mirrorRing.position.set(mirrorPos.x, 0.06, mirrorPos.z);
+  const mirrorBoard = signBoard('いまのすがた', 'きがえた すがたを みる', '#20344a', 2.8);
+  mirrorBoard.position.set(mirrorPos.x, 3.2, mirrorPos.z);
+  mirrorBoard.rotation.y = mirrorFacing;
+  scene.add(mirrorRing, mirrorBoard);
+  claim(mirrorPos.x - 3, mirrorPos.x + 3, mirrorPos.z - 3, mirrorPos.z + 3);
+
+  // 台の上に立つ人形。着がえるたびに作り直す
+  let mannequin = null;
+  const setSkin = (skin) => {
+    if (mannequin) {
+      scene.remove(mannequin.root);
+      mannequin.dispose?.();
+      mannequin = null;
+    }
+    mannequin = makeAvatar(0x5f7f9f, 'human', { skin });
+    mannequin.root.position.set(mirrorPos.x, standTop, mirrorPos.z);
+    mannequin.root.rotation.y = mirrorFacing;
+    scene.add(mannequin.root);
+  };
+  const updateMannequin = (dt, time) => {
+    mannequin?.update(dt, { anim: { name: 'wave', t: time }, speed: 0, pitch: 0 });
+  };
+
   // ---- 外周。見えない壁で、キャンプの外へ出られないようにする ----
   for (const [dx, dz] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
     addHiddenBox(dx * YARD, 0, dz * YARD, dx ? 1.2 : YARD * 2 + 2, 8, dz ? 1.2 : YARD * 2 + 2);
   }
 
-  return { scene, colliders, npcs, zones, spawn: HUB_SPAWN.clone() };
+  return { scene, colliders, npcs, zones, setSkin, updateMannequin, spawn: HUB_SPAWN.clone() };
 }

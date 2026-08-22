@@ -165,7 +165,9 @@ async function dressUp() {
   if (!skinReady(id)) await loadSkin(id);
   const def = SKIN_BY_ID[id];
   if (def?.hat && !skinReady(def.hat)) await loadSkin(def.hat);
+  // 倒れたときに見える自分の体と、待機場の姿見の両方に着せる
   playerBody.setSkin(id);
+  hub.setSkin(id);
 }
 
 const shop = new Shop(ITEM_ICONS, {
@@ -1744,6 +1746,8 @@ function updateHub(dt) {
   for (const npc of hub.npcs) {
     npc.avatar.update(dt, { anim: { name: 'wave', t: hubTime }, speed: 0, pitch: 0 });
   }
+  // 姿見の人形も動かす。止まっていると人形に見えてしまう
+  hub.updateMannequin(dt, hubTime);
 
   // 買い物中でも、まわりの人は動いて見えていてほしい
   updateRemotes(dt);
